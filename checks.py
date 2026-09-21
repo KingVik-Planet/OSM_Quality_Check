@@ -198,9 +198,19 @@ def _way_point(w):
 # Run against new objects plus nearby existing context from Overpass.
 # ---------------------------------------------------------------------------
 
-def check_building_geometry(new_buildings, context_buildings):
-    """overlapping buildings / building inside building / crossing buildings."""
+def check_building_geometry(new_buildings, context_buildings, fetch_module=None):
+    """overlapping buildings / building inside building / crossing buildings.
+
+    fetch_module, if given, is used to re-verify a candidate overlap
+    against the LIVE OSM API before flagging it, whenever the "other"
+    building came from Overpass context rather than from this changeset.
+    This guards against Overpass replication lag: if a mapper fixed an
+    overlap by editing one building in an earlier changeset and the
+    other in this one, Overpass may not have caught up to the earlier
+    fix yet, which would otherwise show up as a false positive here.
+    """
     issues = []
+    context_ids = {b["id"] for b in context_buildings}
     all_polys = new_buildings + context_buildings
     geoms = [b["_geom"] for b in all_polys]
     valid_idx = [i for i, g in enumerate(geoms) if g is not None and g.is_valid and g.area > 0]
@@ -223,6 +233,14 @@ def check_building_geometry(new_buildings, context_buildings):
             other_geom = other["_geom"]
             if not geom.intersects(other_geom):
                 continue
+
+            if fetch_module is not None and other["id"] in context_ids:
+                fresh_geom = fetch_module.fetch_live_way_geometry(other["id"])
+                if fresh_geom is not None:
+                    other_geom = fresh_geom
+                    if not geom.is_valid or not other_geom.is_valid or not geom.intersects(other_geom):
+                        continue  # the live API shows this overlap is already resolved
+
             checked_pairs.add(pair)
             lat, lon = geo_utils.centroid_of(geom)
 
@@ -419,7 +437,7 @@ def run_all_checks(cs_meta, diff, fetch_module):
 
     new_buildings = [w for w in new_ways if is_building(w)]
     context_buildings = [w for w in context_ways if is_building(w)]
-    issues += check_building_geometry(new_buildings, context_buildings)
+    issues += check_building_geometry(new_buildings, context_buildings, fetch_module)
 
     new_highways = [w for w in new_ways if is_highway(w)]
     context_highways = [w for w in context_ways if is_highway(w)]
