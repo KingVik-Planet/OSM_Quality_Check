@@ -333,7 +333,8 @@ def check_endpoint_near_other_way(new_ways, context_ways):
     issues = []
     all_ways = new_ways + context_ways
     geoms = [w.get("_geom") for w in all_ways]
-    valid = [(g, w) for g, w in zip(geoms, all_ways) if g is not None]
+    #valid = [(g, w) for g, w in zip(geoms, all_ways) if g is not None]. deleteking
+    valid = [(g, w) for g, w in zip(geoms, all_ways) if isinstance(g, LineString)]
     if not valid:
         return issues
     tree = STRtree([g for g, _ in valid])
