@@ -373,7 +373,7 @@ def run_all_checks(cs_meta, diff, fetch_module):
     issues += check_untagged_and_missing_primary(non_relations)
     issues += check_wrong_tagging(changed_elements)
 
-    created_nodes = [e for e in diff["create"] if e["type"] == "node"]
+    created_nodes = [e for e in diff["create"] if e["type"] == "node" and e.get("lat") is not None]
     issues += check_duplicate_nodes(created_nodes)
 
     new_ways = [e for e in changed_elements if e["type"] == "way"]
@@ -382,7 +382,7 @@ def run_all_checks(cs_meta, diff, fetch_module):
     if not new_ways:
         return issues  # nothing left needs geometry resolution
 
-    changeset_node_index = {n["id"]: n for n in diff["create"] + diff["modify"] if n["type"] == "node"}
+    changeset_node_index = {n["id"]: n for n in diff["create"] + diff["modify"] if n["type"] == "node" and n.get("lat") is not None}
     all_needed_nodes = {n for w in new_ways for n in w["nodes"]}
     node_coords = fetch_module.fetch_node_coords(list(all_needed_nodes), changeset_node_index)
     for w in new_ways:
