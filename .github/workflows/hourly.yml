@@ -1,0 +1,41 @@
+name: OSM #tt_event hourly quality check
+
+on:
+  schedule:
+    - cron: "0 * * * *"   # every hour, on the hour, UTC
+  workflow_dispatch: {}    # lets you trigger a run manually from the Actions tab
+
+permissions:
+  contents: write   # needed so the workflow can commit the new CSV rows back
+
+jobs:
+  run-quality-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: osm_quality_check
+        run: pip install -r requirements.txt
+
+      - name: Run quality check
+        working-directory: osm_quality_check
+        env:
+          OSMCHA_TOKEN: ${{ secrets.OSMCHA_TOKEN }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
+          # Flip this to "1" once Slack posting is wired up and tested.
+          QC_SLACK_ENABLED: "0"
+        run: python main.py
+
+      - name: Commit updated data back to the repo
+        run: |
+          git config user.name "osm-quality-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add osm_quality_check/data
+          git diff --cached --quiet || git commit -m "Quality check run $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git push
