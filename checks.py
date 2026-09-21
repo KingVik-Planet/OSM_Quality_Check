@@ -329,11 +329,16 @@ def check_node_connects_highway_and_building(building_ways, highway_ways):
 
 def check_endpoint_near_other_way(new_ways, context_ways):
     """Undershoot/overshoot: a way's endpoint sits suspiciously close to
-    another way's line without actually sharing a node with it."""
+    another way's LINE without actually sharing a node with it.
+
+    Only compares against other lineal geometry (LineString) -- a
+    building polygon has no .project() concept of "nearest point along
+    it", so polygons must be excluded from the comparison set, not just
+    from the "w" being checked.
+    """
     issues = []
     all_ways = new_ways + context_ways
     geoms = [w.get("_geom") for w in all_ways]
-    #valid = [(g, w) for g, w in zip(geoms, all_ways) if g is not None]. deleteking
     valid = [(g, w) for g, w in zip(geoms, all_ways) if isinstance(g, LineString)]
     if not valid:
         return issues
@@ -382,7 +387,10 @@ def run_all_checks(cs_meta, diff, fetch_module):
     if not new_ways:
         return issues  # nothing left needs geometry resolution
 
-    changeset_node_index = {n["id"]: n for n in diff["create"] + diff["modify"] if n["type"] == "node" and n.get("lat") is not None}
+    changeset_node_index = {
+        n["id"]: n for n in diff["create"] + diff["modify"]
+        if n["type"] == "node" and n.get("lat") is not None
+    }
     all_needed_nodes = {n for w in new_ways for n in w["nodes"]}
     node_coords = fetch_module.fetch_node_coords(list(all_needed_nodes), changeset_node_index)
     for w in new_ways:
