@@ -2,7 +2,7 @@ name: OSM #tt_event hourly quality check
 
 on:
   schedule:
-    - cron: "0 * * * *"   # every hour, on the hour, UTC
+    - cron: "7 * * * *"   # 7 Minutes past every hour, on the hour, UTC
   workflow_dispatch: {}    # lets you trigger a run manually from the Actions tab
 
 concurrency:
