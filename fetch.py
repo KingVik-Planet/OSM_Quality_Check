@@ -10,6 +10,7 @@ import requests
 import xml.etree.ElementTree as ET
 
 import config
+import geo_utils
 
 log = logging.getLogger(__name__)
 
@@ -190,6 +191,38 @@ def fetch_overpass_context(min_lat, min_lon, max_lat, max_lon, exclude_way_ids, 
         elif el["type"] == "way" and el["id"] not in exclude_way_ids:
             ways.append({"id": el["id"], "nodes": el.get("nodes", []), "tags": el.get("tags", {})})
     return ways, nodes
+
+
+def fetch_live_way_geometry(way_id):
+    """
+    Re-fetches a way's CURRENT geometry directly from the live OSM API --
+    not Overpass, which can lag a few minutes behind the live database.
+
+    Used as a double-check before actually flagging a candidate overlap
+    or crossing against a way that came from Overpass context (i.e. an
+    existing feature, not something touched in this changeset). Without
+    this, a mapper who fixes an overlap by editing one building in an
+    early changeset and a neighbouring building in the very next one can
+    get a false positive: the second changeset's new geometry looks
+    fine, but Overpass's copy of the first building hasn't caught up
+    with the fix yet, so a genuinely-resolved overlap still shows up as
+    an issue in our comparison.
+
+    Returns None on any failure (way deleted, network error, etc.) --
+    callers should treat None as "couldn't verify, fall back to the
+    original context result" rather than as proof the overlap is real.
+    """
+    try:
+        resp = _get(f"{config.OSM_API_BASE}/way/{way_id}/full.json")
+        elements = resp.json().get("elements", [])
+        way = next((e for e in elements if e["type"] == "way" and e["id"] == way_id), None)
+        if way is None:
+            return None
+        node_coords = {e["id"]: (e["lon"], e["lat"]) for e in elements if e["type"] == "node"}
+        return geo_utils.build_way_geometry(way.get("nodes", []), node_coords, way.get("tags"))
+    except Exception as e:
+        log.info("Live re-check of way %s failed (non-fatal, keeping original result): %s", way_id, e)
+        return None
 
 
 def fetch_osmcha_flags(changeset_id):
