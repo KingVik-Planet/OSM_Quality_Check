@@ -91,8 +91,9 @@ def fetch_changeset_diff(changeset_id):
                 continue
             item = {"type": el.tag, "id": int(el.get("id"))}
             if el.tag == "node":
-                item["lat"] = float(el.get("lat"))
-                item["lon"] = float(el.get("lon"))
+                lat_str, lon_str = el.get("lat"), el.get("lon")
+                item["lat"] = float(lat_str) if lat_str is not None else None
+                item["lon"] = float(lon_str) if lon_str is not None else None
             if el.tag == "way":
                 item["nodes"] = [int(nd.get("ref")) for nd in el.findall("nd")]
             item["tags"] = {t.get("k"): t.get("v") for t in el.findall("tag")}
