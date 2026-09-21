@@ -22,6 +22,12 @@ OVERPASS_ENDPOINTS = [
 ]
 # how far (metres) around a changeset's bbox to pull existing context geometry
 OVERPASS_CONTEXT_BUFFER_M = float(os.getenv("QC_OVERPASS_BUFFER_M", 50))
+# how long (seconds) to wait for a single HTTP response from a mirror
+OVERPASS_HTTP_TIMEOUT_S = int(os.getenv("QC_OVERPASS_HTTP_TIMEOUT_S", 240))
+# told to the Overpass server itself as its own internal execution budget
+OVERPASS_QUERY_TIMEOUT_S = int(os.getenv("QC_OVERPASS_QUERY_TIMEOUT_S", 200))
+# how many times to retry a single mirror before moving to the next one
+OVERPASS_RETRIES = int(os.getenv("QC_OVERPASS_RETRIES", 2))
 
 # --- osmcha (optional enrichment only -- never a hard dependency) -----------
 OSMCHA_API_BASE = os.getenv("OSMCHA_API_BASE", "https://osmcha.org/api/v1")
