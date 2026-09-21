@@ -1,0 +1,3 @@
+s_no,error_type,username,user_id,osm_location_link,changeset_id,changeset_link,osm_object_type,osm_object_id,time_utc,country,detail
+1,duplicated node,MartinBarcala,24578004,https://www.openstreetmap.org/#map=18/1.018625/32.725091,189362622,https://www.openstreetmap.org/changeset/189362622,node,14204363504,2026-09-21T18:14:11Z,Uganda,within 0.00m of node 14204363581
+2,overlapping highway,MartinBarcala,24578004,https://www.openstreetmap.org/#map=18/1.016452/32.722375,189362622,https://www.openstreetmap.org/changeset/189362622,way,1561096580,2026-09-21T18:14:11Z,Uganda,runs alongside existing way 1561096591 for 72% of its length
