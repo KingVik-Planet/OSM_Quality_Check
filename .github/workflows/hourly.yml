@@ -6,7 +6,7 @@ on:
   workflow_dispatch: {}    # lets you trigger a run manually from the Actions tab
 
 permissions:
-  contents: write   # needed so the workflow can commit the new CSV rows back
+  contents: write   # needed so the workflow can commit new CSV rows back
 
 jobs:
   run-quality-check:
@@ -18,12 +18,24 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Locate the project folder
+        # Works whether main.py ended up at the repo root or inside an
+        # osm_quality_check/ subfolder -- finds wherever main.py actually
+        # is and remembers that folder for every later step.
+        run: |
+          APP_DIR=$(dirname "$(find . -maxdepth 3 -name 'main.py' -not -path './.git/*' | head -n 1)")
+          if [ -z "$APP_DIR" ] || [ "$APP_DIR" = "." ]; then
+            APP_DIR="."
+          fi
+          echo "Found main.py in: $APP_DIR"
+          echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
+
       - name: Install dependencies
-        working-directory: osm_quality_check
+        working-directory: ${{ env.APP_DIR }}
         run: pip install -r requirements.txt
 
       - name: Run quality check
-        working-directory: osm_quality_check
+        working-directory: ${{ env.APP_DIR }}
         env:
           OSMCHA_TOKEN: ${{ secrets.OSMCHA_TOKEN }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
@@ -33,9 +45,10 @@ jobs:
         run: python main.py
 
       - name: Commit updated data back to the repo
+        working-directory: ${{ env.APP_DIR }}
         run: |
           git config user.name "osm-quality-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add osm_quality_check/data
+          git add data
           git diff --cached --quiet || git commit -m "Quality check run $(date -u +'%Y-%m-%d %H:%M UTC')"
           git push
