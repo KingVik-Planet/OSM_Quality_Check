@@ -78,7 +78,13 @@ def fetch_changeset_diff(changeset_id):
     Downloads and parses the osmChange for a changeset. Returns:
     {"create": [...], "modify": [...], "delete": [...]}
     where each element is a dict with at least "type" and "id", plus
-    "tags", "lat"/"lon" for nodes, and "nodes" (ordered ref list) for ways.
+    "tags", "nodes" (ordered ref list) for ways.
+
+    For nodes, "lat"/"lon" are set to None (not skipped) if the OSM API
+    didn't include coordinate attributes for that element -- this does
+    happen in practice for some deleted/historic elements -- so callers
+    must treat None as "coordinates unknown" rather than assume every
+    node dict has usable numbers.
     """
     resp = _get(f"{config.OSM_API_BASE}/changeset/{changeset_id}/download")
     root = ET.fromstring(resp.content)
@@ -106,14 +112,15 @@ def fetch_node_coords(node_ids, changeset_nodes):
     Resolves lon/lat for a set of node ids, preferring nodes already
     present in the same changeset diff (changeset_nodes: id -> node dict
     with lat/lon), falling back to the live OSM API for referenced nodes
-    that weren't themselves edited in this changeset.
+    that weren't themselves edited in this changeset -- or whose diff
+    entry had no usable coordinates.
     Returns {node_id: (lon, lat)}.
     """
     coords = {}
     missing = []
     for nid in node_ids:
         n = changeset_nodes.get(nid)
-        if n is not None:
+        if n is not None and n.get("lat") is not None and n.get("lon") is not None:
             coords[nid] = (n["lon"], n["lat"])
         else:
             missing.append(nid)
@@ -135,12 +142,15 @@ def fetch_overpass_context(min_lat, min_lon, max_lat, max_lon, exclude_way_ids, 
     new edits can be checked against surrounding, previously-mapped
     geometry -- not just against other objects in the same upload.
     Returns (ways: [{"id","nodes","tags"}], nodes: {id: (lon, lat)}).
-    Fails soft (returns empty) if every Overpass mirror is unreachable.
+    Retries each mirror a couple of times before moving to the next one,
+    since public Overpass instances (especially from CI/GitHub Actions
+    IPs) sometimes just have a slow moment rather than being truly down.
+    Fails soft (returns empty) only if every mirror fails every attempt.
     """
     buf_deg = config.OVERPASS_CONTEXT_BUFFER_M / 111000  # rough metres->degrees
     s, w, n, e = min_lat - buf_deg, min_lon - buf_deg, max_lat + buf_deg, max_lon + buf_deg
     query = f"""
-    [out:json][timeout:60];
+    [out:json][timeout:{config.OVERPASS_QUERY_TIMEOUT_S}];
     (
       way["building"]({s},{w},{n},{e});
       way["highway"]({s},{w},{n},{e});
@@ -153,17 +163,24 @@ def fetch_overpass_context(min_lat, min_lon, max_lat, max_lon, exclude_way_ids, 
     data = None
     last_err = None
     for endpoint in config.OVERPASS_ENDPOINTS:
-        try:
-            resp = requests.post(endpoint, data={"data": query}, headers=HEADERS, timeout=90)
-            resp.raise_for_status()
-            data = resp.json()
+        for attempt in range(1, config.OVERPASS_RETRIES + 1):
+            try:
+                resp = requests.post(
+                    endpoint, data={"data": query}, headers=HEADERS,
+                    timeout=config.OVERPASS_HTTP_TIMEOUT_S,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                break
+            except requests.RequestException as e:
+                last_err = e
+                log.info("Overpass %s attempt %d/%d failed: %s",
+                         endpoint, attempt, config.OVERPASS_RETRIES, e)
+        if data is not None:
             break
-        except requests.RequestException as e:
-            last_err = e
-            continue
 
     if data is None:
-        log.warning("All Overpass endpoints failed, skipping context for this changeset: %s", last_err)
+        log.warning("All Overpass endpoints failed after retries, skipping context for this changeset: %s", last_err)
         return [], {}
 
     nodes, ways = {}, []
