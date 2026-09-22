@@ -2,23 +2,25 @@ name: OSM #tt_event hourly quality check
 
 on:
   schedule:
-    - cron: "7 * * * *"   # 7 Minutes past every hour, on the hour, UTC
-  workflow_dispatch: {}    # lets you trigger a run manually from the Actions tab
+    - cron: "7 * * * *"   # 7 minutes past every hour, UTC -- avoids GitHub's
+                            # scheduler congestion at the top of the hour
+  workflow_dispatch: {}
 
 concurrency:
   group: osm-quality-check-hourly
-  cancel-in-progress: false   # queue overlapping runs rather than racing pushes
+  cancel-in-progress: false
 
 permissions:
-  contents: write   # needed so the workflow can commit new CSV rows back
+  contents: write
 
 jobs:
   run-quality-check:
     runs-on: ubuntu-latest
+    timeout-minutes: 20   # hard ceiling: never let one run block the next hour's trigger
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # full history, needed so the rebase-before-push below works
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -32,7 +34,6 @@ jobs:
           OSMCHA_TOKEN: ${{ secrets.OSMCHA_TOKEN }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
-          # Flip this to "1" once Slack posting is wired up and tested.
           QC_SLACK_ENABLED: "0"
         run: python main.py
 
