@@ -123,7 +123,7 @@ ENUMERATED_KEY_VALUES = {
 }
 
 # Keys that count as "this feature has a real primary tag" for the
-# missing-primary-tag check.
+# missing-primary-tag check..
 PRIMARY_TAG_KEYS = {
     "building", "highway", "natural", "landuse", "amenity", "waterway",
     "railway", "leisure", "shop", "tourism", "man_made", "barrier",
