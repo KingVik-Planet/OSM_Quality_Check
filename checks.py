@@ -81,7 +81,7 @@ def _changeset_centroid(cs_meta):
 
 
 # ---------------------------------------------------------------------------
-# Tagging checks
+# Tagging checks.
 # ---------------------------------------------------------------------------
 
 def check_untagged_and_missing_primary(elements):
@@ -383,7 +383,7 @@ def check_endpoint_near_other_way(new_ways, context_ways):
 
 
 # ---------------------------------------------------------------------------
-# Orchestration
+# Orchestration...
 # ---------------------------------------------------------------------------
 
 def run_all_checks(cs_meta, diff, fetch_module):
