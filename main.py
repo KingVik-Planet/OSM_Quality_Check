@@ -3,10 +3,11 @@ Entry point. Run hourly (via GitHub Actions cron, or manually):
 
     python main.py
 
-For every #tt_event changeset opened/closed in the last hour,
-worldwide, this runs every check in checks.py and appends findings to
-a rotating CSV under data/. Slack posting is wired in but stays a
-no-op until it's switched on in config.py.
+Each run processes AT MOST one hour of #tt_event changeset activity,
+worldwide -- see the docstring on determine_window() for why this is
+capped rather than open-ended. Findings are appended to a rotating CSV
+under data/. Slack posting is wired in but stays a no-op until it's
+switched on in config.py.
 """
 import logging
 from datetime import datetime, timedelta, timezone
@@ -22,12 +23,29 @@ log = logging.getLogger(__name__)
 
 
 def determine_window(state):
+    """
+    Every run processes AT MOST one hour of data, starting from wherever
+    the last run left off -- never more, regardless of how far behind
+    the schedule has fallen.
+
+    Why this matters: if this simply ran from "last stop point" to "now"
+    (as an earlier version did), a single missed scheduled trigger would
+    make the next run's window balloon to cover the whole gap -- more
+    changesets, more Overpass calls, a longer run, which makes THAT run
+    more likely to overrun into the next scheduled slot, causing another
+    missed run and an even bigger window next time. Capping the window
+    to exactly one hour breaks that spiral: if there's backlog, this run
+    only takes the oldest unprocessed hour and stops there; the next run
+    picks up the following hour, and so on, catching up one clean,
+    bounded hour at a time instead of swallowing the backlog in one go.
+    """
     now = datetime.now(timezone.utc).replace(microsecond=0, tzinfo=None)
     if state.get("last_run_end_utc"):
         start = datetime.fromisoformat(state["last_run_end_utc"])
     else:
         start = now - timedelta(hours=1)
-    return start, now
+    end = min(start + timedelta(hours=1), now)
+    return start, end
 
 
 def process_changeset(cs_meta):
