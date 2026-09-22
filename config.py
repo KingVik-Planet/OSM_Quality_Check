@@ -23,11 +23,11 @@ OVERPASS_ENDPOINTS = [
 # how far (metres) around a changeset's bbox to pull existing context geometry
 OVERPASS_CONTEXT_BUFFER_M = float(os.getenv("QC_OVERPASS_BUFFER_M", 50))
 # how long (seconds) to wait for a single HTTP response from a mirror
-OVERPASS_HTTP_TIMEOUT_S = int(os.getenv("QC_OVERPASS_HTTP_TIMEOUT_S", 60))
+OVERPASS_HTTP_TIMEOUT_S = int(os.getenv("QC_OVERPASS_HTTP_TIMEOUT_S", 120))
 # told to the Overpass server itself as its own internal execution budget
-OVERPASS_QUERY_TIMEOUT_S = int(os.getenv("QC_OVERPASS_QUERY_TIMEOUT_S", 200))
+OVERPASS_QUERY_TIMEOUT_S = int(os.getenv("QC_OVERPASS_QUERY_TIMEOUT_S", 100))
 # how many times to retry a single mirror before moving to the next one
-OVERPASS_RETRIES = int(os.getenv("QC_OVERPASS_RETRIES", 1))
+OVERPASS_RETRIES = int(os.getenv("QC_OVERPASS_RETRIES", 3))
 
 # --- osmcha (optional enrichment only -- never a hard dependency) -----------
 OSMCHA_API_BASE = os.getenv("OSMCHA_API_BASE", "https://osmcha.org/api/v1")
@@ -123,7 +123,7 @@ ENUMERATED_KEY_VALUES = {
 }
 
 # Keys that count as "this feature has a real primary tag" for the
-# missing-primary-tag check..
+# missing-primary-tag check.
 PRIMARY_TAG_KEYS = {
     "building", "highway", "natural", "landuse", "amenity", "waterway",
     "railway", "leisure", "shop", "tourism", "man_made", "barrier",
