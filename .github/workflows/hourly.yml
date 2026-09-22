@@ -3,7 +3,7 @@ name: OSM #tt_event hourly quality check
 on:
   schedule:
     - cron: "7 * * * *"   # 7 minutes past every hour, UTC -- avoids GitHub's
-                            # scheduler congestion at the top of the hour.
+                            # scheduler congestion at the top of the hour
   workflow_dispatch: {}
 
 concurrency:
@@ -16,7 +16,6 @@ permissions:
 jobs:
   run-quality-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 20   # hard ceiling: never let one run block the next hour's trigger
     steps:
       - uses: actions/checkout@v4
         with:
