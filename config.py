@@ -129,5 +129,5 @@ PRIMARY_TAG_KEYS = {
     "railway", "leisure", "shop", "tourism", "man_made", "barrier",
     "boundary", "landcover", "power", "aeroway", "military", "office",
     "craft", "emergency", "healthcare", "public_transport", "place",
-    "historic", "geological", "route",
+    "historic", "geological", "route", "ford",
 }
