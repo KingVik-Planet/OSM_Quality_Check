@@ -27,7 +27,7 @@ OVERPASS_HTTP_TIMEOUT_S = int(os.getenv("QC_OVERPASS_HTTP_TIMEOUT_S", 120))
 # told to the Overpass server itself as its own internal execution budget
 OVERPASS_QUERY_TIMEOUT_S = int(os.getenv("QC_OVERPASS_QUERY_TIMEOUT_S", 100))
 # how many times to retry a single mirror before moving to the next one
-OVERPASS_RETRIES = int(os.getenv("QC_OVERPASS_RETRIES", 2))
+OVERPASS_RETRIES = int(os.getenv("QC_OVERPASS_RETRIES", 1))
 
 # --- osmcha (optional enrichment only -- never a hard dependency) -----------
 OSMCHA_API_BASE = os.getenv("OSMCHA_API_BASE", "https://osmcha.org/api/v1")
