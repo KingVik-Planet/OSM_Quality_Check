@@ -135,7 +135,8 @@ def run():
 
     all_issues = list(retry_rows)
     newly_pending = still_pending
-    for cs in changesets:
+    total = len(changesets)
+    for idx, cs in enumerate(changesets, start=1):
         try:
             rows, incomplete = process_changeset(cs)
             all_issues.extend(rows)
@@ -146,11 +147,14 @@ def run():
                     "meta_fetch_failures": 0,
                     "first_flagged_utc": datetime.now(timezone.utc).isoformat(),
                 })
-                log.info("Changeset %s (%s): Overpass unavailable, queued for retry", cs["id"], cs.get("user"))
+                log.info("[%d/%d] Changeset %s (%s): Overpass unavailable, queued for retry",
+                         idx, total, cs["id"], cs.get("user"))
             else:
-                log.info("Changeset %s (%s): %d issue(s)", cs["id"], cs.get("user"), len(rows))
+                log.info("[%d/%d] Changeset %s (%s): %d issue(s)",
+                         idx, total, cs["id"], cs.get("user"), len(rows))
         except Exception:
-            log.exception("Failed processing changeset %s -- skipping it, continuing with the rest", cs.get("id"))
+            log.exception("[%d/%d] Failed processing changeset %s -- skipping it, continuing with the rest",
+                           idx, total, cs.get("id"))
 
     path, n_written = storage.append_issues(state, all_issues)
     state["last_run_end_utc"] = end.isoformat()
