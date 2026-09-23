@@ -17,6 +17,33 @@ log = logging.getLogger(__name__)
 HEADERS = {"User-Agent": "osm-tt-event-quality-check/1.0"}
 
 
+class OverpassUnavailable(Exception):
+    """
+    Raised when Overpass context could not be fetched -- either every
+    mirror failed every retry, or the circuit breaker is currently open.
+    Distinct from "Overpass answered and there's genuinely nothing
+    nearby" (which returns an empty result normally, not an exception),
+    so callers can tell the difference between "no context exists" and
+    "we couldn't find out" -- the latter needs to be retried later, the
+    former is a final, correct answer.
+    """
+    pass
+
+
+# --- Overpass circuit breaker -----------------------------------------------
+# If Overpass fails completely (every mirror, every retry) this many times
+# IN A ROW within a single run, stop calling it entirely for the rest of
+# that run and skip straight to raising OverpassUnavailable for every
+# remaining changeset. Without this, a sustained Overpass outage (which
+# does happen -- sometimes for an hour or more) means every single
+# changeset in the run pays the full multi-minute, multi-mirror retry
+# cost for nothing. This resets automatically every run, since each run
+# is a fresh process -- so a recovered Overpass gets a fair fresh
+# attempt again next time, no persistence needed.
+_OVERPASS_CIRCUIT_THRESHOLD = 2
+_overpass_consecutive_failures = 0
+
+
 def _get(url, params=None, headers=None, timeout=60):
     h = dict(HEADERS)
     if headers:
@@ -72,6 +99,25 @@ def fetch_changesets_in_window(start_dt, end_dt):
         cursor_end = new_cursor_end
 
     return list(found.values())
+
+
+def fetch_changeset_meta(changeset_id):
+    """
+    Fetches a single changeset's own metadata (user, bbox, tags, etc.)
+    directly by ID. Used when retrying a changeset from the pending
+    Overpass-recheck queue, since fetch_changesets_in_window only
+    searches within a specific time window and won't find an older
+    changeset on demand by ID.
+    Returns None if the changeset can't be fetched (deleted, hidden,
+    network error) -- callers should treat that as a separate, distinct
+    failure from "Overpass is down" (see OverpassUnavailable).
+    """
+    try:
+        resp = _get(f"{config.OSM_API_BASE}/changeset/{changeset_id}.json")
+        return resp.json().get("changeset")
+    except requests.RequestException as e:
+        log.warning("Could not fetch metadata for pending changeset %s: %s", changeset_id, e)
+        return None
 
 
 def fetch_changeset_diff(changeset_id):
@@ -142,12 +188,23 @@ def fetch_overpass_context(min_lat, min_lon, max_lat, max_lon, exclude_way_ids, 
     Pulls existing buildings/highways near a changeset's bounding box so
     new edits can be checked against surrounding, previously-mapped
     geometry -- not just against other objects in the same upload.
-    Returns (ways: [{"id","nodes","tags"}], nodes: {id: (lon, lat)}).
-    Retries each mirror a couple of times before moving to the next one,
-    since public Overpass instances (especially from CI/GitHub Actions
-    IPs) sometimes just have a slow moment rather than being truly down.
-    Fails soft (returns empty) only if every mirror fails every attempt.
+    Returns (ways: [{"id","nodes","tags"}], nodes: {id: (lon, lat)}) on
+    success (which may legitimately be empty if nothing is nearby).
+
+    Raises OverpassUnavailable if every mirror failed every retry, or if
+    the circuit breaker is currently open -- callers must catch this and
+    treat it as "unknown, try again later", never as "confirmed empty".
     """
+    global _overpass_consecutive_failures
+
+    if _overpass_consecutive_failures >= _OVERPASS_CIRCUIT_THRESHOLD:
+        log.info(
+            "Overpass circuit breaker open (%d consecutive full failures this run) "
+            "-- skipping context fetch instantly instead of retrying",
+            _overpass_consecutive_failures,
+        )
+        raise OverpassUnavailable("circuit breaker open")
+
     buf_deg = config.OVERPASS_CONTEXT_BUFFER_M / 111000  # rough metres->degrees
     s, w, n, e = min_lat - buf_deg, min_lon - buf_deg, max_lat + buf_deg, max_lon + buf_deg
     query = f"""
@@ -181,9 +238,14 @@ def fetch_overpass_context(min_lat, min_lon, max_lat, max_lon, exclude_way_ids, 
             break
 
     if data is None:
-        log.warning("All Overpass endpoints failed after retries, skipping context for this changeset: %s", last_err)
-        return [], {}
+        _overpass_consecutive_failures += 1
+        log.warning(
+            "All Overpass endpoints failed after retries (%d consecutive full "
+            "failures this run): %s", _overpass_consecutive_failures, last_err,
+        )
+        raise OverpassUnavailable(str(last_err))
 
+    _overpass_consecutive_failures = 0  # a mirror answered -- reset the breaker
     nodes, ways = {}, []
     for el in data.get("elements", []):
         if el["type"] == "node":
