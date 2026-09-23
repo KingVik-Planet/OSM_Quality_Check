@@ -124,10 +124,30 @@ ENUMERATED_KEY_VALUES = {
 
 # Keys that count as "this feature has a real primary tag" for the
 # missing-primary-tag check.
+# Keys that count as "this feature has a real primary tag" for the
+# missing-primary-tag check. Sourced from OSM's own "Top-level tag" wiki
+# page (https://wiki.openstreetmap.org/wiki/Top-level_tag), which
+# maintains the definitive list split into two categories:
+#   - keys for standalone features (a shop, a road, a natural feature...)
+#   - keys for "dependent" features -- things like an entrance or a ford
+#     that only make sense attached to a larger feature, but are still a
+#     valid, complete tag on their own element (so they should NOT be
+#     flagged as "missing a primary tag").
+# Not guaranteed to stay perfectly current forever (OSM's tagging
+# vocabulary evolves), but this is the closest thing to an authoritative,
+# comprehensive source rather than an ad hoc, reactively-built list.
 PRIMARY_TAG_KEYS = {
-    "building", "highway", "natural", "landuse", "amenity", "waterway",
-    "railway", "leisure", "shop", "tourism", "man_made", "barrier",
-    "boundary", "landcover", "power", "aeroway", "military", "office",
-    "craft", "emergency", "healthcare", "public_transport", "place",
-    "historic", "geological", "route", "ford",
+    # -- standalone features --
+    "advertising", "aerialway", "aeroway", "amenity", "barrier",
+    "boundary", "building", "club", "craft", "departures_board",
+    "education", "emergency", "geological", "healthcare", "highway",
+    "historic", "landcover", "landuse", "leisure", "man_made",
+    "military", "natural", "office", "piste:type", "place", "power",
+    "public_transport", "railway", "route", "shop", "telecom",
+    "tourism", "waterway",
+    # -- dependent features (valid as a sole tag, tied to a parent feature) --
+    "addr:interpolation", "allotments", "area:highway", "attraction",
+    "building:part", "bridge:support", "cemetery", "entrance", "ford",
+    "golf", "indoor", "junction", "noexit", "playground",
+    "roller_coaster", "traffic_calming", "traffic_sign",
 }
