@@ -151,3 +151,15 @@ PRIMARY_TAG_KEYS = {
     "golf", "indoor", "junction", "noexit", "playground",
     "roller_coaster", "traffic_calming", "traffic_sign",
 }
+
+# "Lifecycle prefixes" that can be placed in front of ANY top-level key to
+# mark a feature's state without losing what it fundamentally is -- e.g.
+# disused:shop=beauty ("this was a beauty shop, no longer operating"),
+# construction:highway=residential ("a residential road being built").
+# A key with one of these prefixes in front of a recognised primary key
+# still counts as having a primary tag -- see _has_primary_tag() below.
+LIFECYCLE_PREFIXES = {
+    "proposed", "planned", "construction", "disused", "abandoned",
+    "ruins", "demolished", "removed", "razed", "destroyed", "was",
+    "former", "closed",
+}
