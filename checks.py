@@ -7,6 +7,12 @@ Honesty note: this is a first, pragmatic version of each geometry check
 mature tools built over years. It's tuned to catch the categories you
 asked for with a low false-positive rate, using thresholds in
 config.py that can be adjusted as you see real-world results.
+
+Structure note: checks that need Overpass context (comparing a new
+object against pre-existing map data) are split into
+run_overpass_dependent_checks() so they can be retried on their own
+later if Overpass was unavailable, without re-running -- and
+duplicating -- the checks that don't need it and already succeeded.
 """
 from dataclasses import dataclass
 from shapely.geometry import Point, LineString, Polygon
@@ -15,6 +21,7 @@ from shapely.strtree import STRtree
 import config
 import geo_utils
 import geocode
+from fetch import OverpassUnavailable
 
 
 @dataclass
@@ -81,7 +88,7 @@ def _changeset_centroid(cs_meta):
 
 
 # ---------------------------------------------------------------------------
-# Tagging checks.
+# Tagging checks
 # ---------------------------------------------------------------------------
 
 def check_untagged_and_missing_primary(elements):
@@ -137,7 +144,7 @@ def _element_point(el):
 
 
 # ---------------------------------------------------------------------------
-# Duplicate checks
+# Duplicate checks (don't need Overpass -- only compare within the diff)
 # ---------------------------------------------------------------------------
 
 def check_duplicate_nodes(created_nodes):
@@ -194,8 +201,8 @@ def _way_point(w):
 
 
 # ---------------------------------------------------------------------------
-# Geometry checks: buildings, ways, highways.
-# Run against new objects plus nearby existing context from Overpass.
+# Geometry checks that NEED Overpass context: buildings, ways, highways
+# compared against pre-existing, nearby map data.
 # ---------------------------------------------------------------------------
 
 def check_building_geometry(new_buildings, context_buildings, fetch_module=None):
@@ -382,28 +389,25 @@ def check_endpoint_near_other_way(new_ways, context_ways):
     return issues
 
 
-# ---------------------------------------------------------------------------
-# Orchestration...
-# ---------------------------------------------------------------------------
+def run_overpass_dependent_checks(cs_meta, new_ways, diff, fetch_module):
+    """
+    Runs every check that needs to compare this changeset's new ways
+    against pre-existing, nearby map data (Overpass context): building
+    overlap/containment/crossing, crossing ways/highways, overlapping
+    highway alignment, node-connects-highway-building, and endpoint-
+    near-other-way.
 
-def run_all_checks(cs_meta, diff, fetch_module):
-    issues = []
-    issues += check_mass_edit_and_revert(cs_meta, diff)
-    issues += check_comment_quality(cs_meta)
+    Split out from run_all_checks specifically so it can be retried on
+    its own later if Overpass was unavailable the first time, without
+    re-running (and duplicating) the checks that don't need Overpass.
 
-    changed_elements = diff["create"] + diff["modify"]
-    non_relations = [e for e in changed_elements if e["type"] != "relation"]
-    issues += check_untagged_and_missing_primary(non_relations)
-    issues += check_wrong_tagging(changed_elements)
-
-    created_nodes = [e for e in diff["create"] if e["type"] == "node" and e.get("lat") is not None]
-    issues += check_duplicate_nodes(created_nodes)
-
-    new_ways = [e for e in changed_elements if e["type"] == "way"]
-    issues += check_duplicate_ways(new_ways)
-
+    Returns (issues, overpass_incomplete). overpass_incomplete is True
+    if Overpass could not be reached (outage or circuit breaker) --
+    when True, `issues` is always [] and the caller MUST treat this
+    changeset as still needing a retry, not as "checked, nothing found".
+    """
     if not new_ways:
-        return issues  # nothing left needs geometry resolution
+        return [], False
 
     changeset_node_index = {
         n["id"]: n for n in diff["create"] + diff["modify"]
@@ -420,6 +424,8 @@ def run_all_checks(cs_meta, diff, fetch_module):
             exclude_way_ids={w["id"] for w in new_ways},
             exclude_node_ids=all_needed_nodes,
         )
+    except OverpassUnavailable:
+        return [], True
     except (KeyError, TypeError):
         context_ways, context_nodes = [], {}
 
@@ -435,6 +441,7 @@ def run_all_checks(cs_meta, diff, fetch_module):
     def is_plain_way(w):
         return isinstance(w.get("_geom"), LineString) and not is_highway(w)
 
+    issues = []
     new_buildings = [w for w in new_ways if is_building(w)]
     context_buildings = [w for w in context_ways if is_building(w)]
     issues += check_building_geometry(new_buildings, context_buildings, fetch_module)
@@ -451,7 +458,38 @@ def run_all_checks(cs_meta, diff, fetch_module):
     )
     issues += check_endpoint_near_other_way(new_ways, context_ways)
 
-    return issues
+    return issues, False
+
+
+# ---------------------------------------------------------------------------
+# Orchestration
+# ---------------------------------------------------------------------------
+
+def run_all_checks(cs_meta, diff, fetch_module):
+    """
+    Runs every check on a freshly-downloaded changeset.
+    Returns (issues, overpass_incomplete) -- see run_overpass_dependent_checks
+    for what overpass_incomplete means and why the caller must act on it
+    (queue this changeset for a later retry) rather than ignore it.
+    """
+    issues = []
+    issues += check_mass_edit_and_revert(cs_meta, diff)
+    issues += check_comment_quality(cs_meta)
+
+    changed_elements = diff["create"] + diff["modify"]
+    non_relations = [e for e in changed_elements if e["type"] != "relation"]
+    issues += check_untagged_and_missing_primary(non_relations)
+    issues += check_wrong_tagging(changed_elements)
+
+    created_nodes = [e for e in diff["create"] if e["type"] == "node" and e.get("lat") is not None]
+    issues += check_duplicate_nodes(created_nodes)
+
+    new_ways = [e for e in changed_elements if e["type"] == "way"]
+    issues += check_duplicate_ways(new_ways)
+
+    overpass_issues, incomplete = run_overpass_dependent_checks(cs_meta, new_ways, diff, fetch_module)
+    issues += overpass_issues
+    return issues, incomplete
 
 
 def to_row(cs_meta, issue: Issue):
