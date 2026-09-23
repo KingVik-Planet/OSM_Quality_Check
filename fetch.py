@@ -177,7 +177,14 @@ def fetch_node_coords(node_ids, changeset_nodes):
         try:
             resp = _get(f"{config.OSM_API_BASE}/nodes.json", params={"nodes": ",".join(map(str, batch))})
             for el in resp.json().get("elements", []):
-                coords[el["id"]] = (el["lon"], el["lat"])
+                lon, lat = el.get("lon"), el.get("lat")
+                if lon is not None and lat is not None:
+                    coords[el["id"]] = (lon, lat)
+                # else: a redacted/hidden node with no coordinates -- leave it
+                # out of coords; build_way_geometry already treats a missing
+                # node as "can't build this way's geometry" and returns None
+                # rather than crashing, so the rest of this changeset's
+                # checks still run normally.
         except requests.RequestException as e:
             log.warning("Could not resolve %d node coords: %s", len(batch), e)
     return coords
