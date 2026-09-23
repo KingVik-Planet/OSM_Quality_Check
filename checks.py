@@ -109,6 +109,18 @@ def check_untagged_and_missing_primary(elements):
 
 
 def check_wrong_tagging(elements):
+    """
+    Flags only the high-confidence case: a value that's a real,
+    recognised value for a DIFFERENT key showing up under this one
+    (e.g. highway=building, area=building) -- not simply "a value we
+    haven't catalogued for this key". Our whitelists are illustrative,
+    not an exhaustive copy of OSM's full tag vocabulary (e.g. they used
+    to be missing railway=level_crossing, a completely standard tag),
+    so flagging every uncatalogued value guarantees false positives on
+    real tags we just hadn't listed yet. This narrower check trades
+    catching a rarer made-up value for eliminating that whole class of
+    false positive.
+    """
     issues = []
     all_known_values = set()
     for values in config.ENUMERATED_KEY_VALUES.values():
@@ -123,10 +135,9 @@ def check_wrong_tagging(elements):
             if key in tags and tags[key] not in allowed:
                 value = tags[key]
                 belongs_elsewhere = any(value in vals for k, vals in config.ENUMERATED_KEY_VALUES.items() if k != key)
-                note = (f"'{key}={value}' looks like a value meant for a different key"
-                        if belongs_elsewhere else
-                        f"'{key}={value}' is not a recognised value for '{key}'")
-                issues.append(Issue("wrong tagging", el["type"], el["id"], lat, lon, detail=note))
+                if belongs_elsewhere:
+                    issues.append(Issue("wrong tagging", el["type"], el["id"], lat, lon,
+                                         detail=f"'{key}={value}' looks like a value meant for a different key"))
         name = tags.get("name")
         if name and name.strip().lower() in all_known_values:
             issues.append(Issue("wrong tagging", el["type"], el["id"], lat, lon,
