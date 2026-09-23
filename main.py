@@ -31,7 +31,7 @@ log = logging.getLogger(__name__)
 # problem), give up on it rather than retrying forever. Overpass-unavailable
 # retries, by contrast, are never capped -- they stay queued until Overpass
 # genuinely answers.
-MAX_META_FETCH_FAILURES = 5
+MAX_META_FETCH_FAILURES = 20
 
 
 def determine_window(state):
