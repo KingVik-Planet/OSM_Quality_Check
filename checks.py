@@ -91,6 +91,23 @@ def _changeset_centroid(cs_meta):
 # Tagging checks
 # ---------------------------------------------------------------------------
 
+def _has_primary_tag(tags):
+    """
+    True if any tag key is a recognised primary key, OR a recognised
+    lifecycle prefix (disused:, construction:, former:, etc.) in front
+    of one -- e.g. disused:shop=beauty is a complete, valid primary tag
+    for a formerly-operating shop, not a tagless node.
+    """
+    for key in tags:
+        if key in config.PRIMARY_TAG_KEYS:
+            return True
+        if ":" in key:
+            prefix, _, rest = key.partition(":")
+            if prefix in config.LIFECYCLE_PREFIXES and rest in config.PRIMARY_TAG_KEYS:
+                return True
+    return False
+
+
 def check_untagged_and_missing_primary(elements):
     issues = []
     for el in elements:
@@ -102,7 +119,7 @@ def check_untagged_and_missing_primary(elements):
             if el["type"] == "way":
                 issues.append(Issue("untagged way", "way", el["id"], lat, lon))
             continue
-        if not (set(tags) & config.PRIMARY_TAG_KEYS):
+        if not _has_primary_tag(tags):
             issues.append(Issue("feature mapped without primary tag", el["type"], el["id"], lat, lon,
                                  detail=f"tags present but none are a primary key: {list(tags.keys())}"))
     return issues
