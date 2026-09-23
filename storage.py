@@ -1,9 +1,11 @@
 """
 CSV storage with automatic rotation once a file approaches the 40MB
-limit (quality_check_1.csv -> quality_check_2.csv -> ...), plus a tiny
-state file that remembers the UTC timestamp of the last successful run
-so every run picks up exactly where the previous one left off, hour by
-hour, even if a run is delayed, skipped, or manually re-triggered.
+limit (quality_check_1.csv -> quality_check_2.csv -> ...), a tiny state
+file that remembers the UTC timestamp of the last successful run so
+every run picks up exactly where the previous one left off, and a
+pending-recheck queue for changesets whose Overpass-dependent checks
+couldn't complete (outage/circuit breaker) and need to be retried on a
+later run rather than silently treated as "checked, nothing found".
 """
 import csv
 import json
@@ -16,6 +18,8 @@ FIELDNAMES = [
     "changeset_id", "changeset_link", "osm_object_type", "osm_object_id",
     "time_utc", "country", "detail",
 ]
+
+PENDING_RECHECK_FILE = os.path.join(config.DATA_DIR, "pending_overpass_recheck.json")
 
 
 def ensure_data_dir():
@@ -34,6 +38,29 @@ def save_state(state):
     ensure_data_dir()
     with open(config.STATE_FILE, "w") as f:
         json.dump(state, f, indent=2)
+
+
+def load_pending_rechecks():
+    """
+    Returns the list of changesets waiting for their Overpass-dependent
+    checks to be retried, each as {"changeset_id", "overpass_attempts",
+    "meta_fetch_failures", "first_flagged_utc"}. Empty list if the file
+    doesn't exist yet (nothing pending) or is unreadable.
+    """
+    ensure_data_dir()
+    if not os.path.exists(PENDING_RECHECK_FILE):
+        return []
+    try:
+        with open(PENDING_RECHECK_FILE) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def save_pending_rechecks(pending_list):
+    ensure_data_dir()
+    with open(PENDING_RECHECK_FILE, "w") as f:
+        json.dump(pending_list, f, indent=2)
 
 
 def _csv_path(index):
