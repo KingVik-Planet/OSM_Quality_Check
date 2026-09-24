@@ -33,7 +33,7 @@ def country_for(lat, lon):
     try:
         resp = requests.get(
             config.NOMINATIM_URL,
-            params={"lat": lat, "lon": lon, "format": "jsonv2", "zoom": 3},
+            params={"lat": lat, "lon": lon, "format": "jsonv2", "zoom": 3, "accept-language": "en"},
             headers={"User-Agent": config.NOMINATIM_USER_AGENT},
             timeout=15,
         )
