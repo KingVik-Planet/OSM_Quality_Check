@@ -212,7 +212,7 @@ def check_duplicate_nodes(created_nodes):
     return issues
 
 
-def check_duplicate_against_existing(created_nodes, context_nodes):
+def check_duplicate_against_existing(created_nodes, context_nodes, fetch_module=None):
     """
     Flags a newly created node that sits within DUPLICATE_NODE_TOLERANCE_M
     of a PRE-EXISTING node (a vertex of a nearby building/highway, pulled
@@ -221,6 +221,15 @@ def check_duplicate_against_existing(created_nodes, context_nodes):
     already on the map, instead of reusing/snapping to it. This needs
     Overpass context, so it only runs as part of the overpass-dependent
     checks, not the always-fast checks above.
+
+    fetch_module, if given, re-verifies the "pre-existing" node against
+    the LIVE OSM API before flagging it. Without this, a node Overpass
+    still has cached but that has since been deleted, moved, or merged
+    into another node by a later edit would get reported as a current
+    duplicate -- even though it can no longer be found by that ID when
+    someone goes to check it in JOSM. If the live check can't confirm
+    the node still exists at that location, the finding is dropped
+    rather than reported on unconfirmed data.
     """
     issues = []
     tol = config.DUPLICATE_NODE_TOLERANCE_M
@@ -238,16 +247,27 @@ def check_duplicate_against_existing(created_nodes, context_nodes):
                 for other_id, other_lat, other_lon in buckets.get((kx + dx, ky + dy), []):
                     d = geo_utils.haversine_m(n["lat"], n["lon"], other_lat, other_lon)
                     if d <= tol:
-                        found = (other_id, d)
+                        found = (other_id, other_lat, other_lon, d)
                         break
                 if found:
                     break
             if found:
                 break
-        if found:
-            other_id, d = found
-            issues.append(Issue("duplicated node", "node", n["id"], n["lat"], n["lon"],
-                                 detail=f"within {d:.2f}m of pre-existing node {other_id}"))
+        if not found:
+            continue
+
+        other_id, other_lat, other_lon, d = found
+        if fetch_module is not None:
+            live = fetch_module.fetch_live_node(other_id)
+            if live is None:
+                continue  # couldn't confirm this node still exists -- don't report on stale data
+            live_lon, live_lat = live
+            d = geo_utils.haversine_m(n["lat"], n["lon"], live_lat, live_lon)
+            if d > tol:
+                continue  # the live position no longer makes this a duplicate
+
+        issues.append(Issue("duplicated node", "node", n["id"], n["lat"], n["lon"],
+                             detail=f"within {d:.2f}m of pre-existing node {other_id}"))
     return issues
 
 
@@ -694,7 +714,7 @@ def run_overpass_dependent_checks(cs_meta, new_ways, diff, fetch_module):
 
     issues = []
     created_nodes = [e for e in diff["create"] if e["type"] == "node" and e.get("lat") is not None]
-    issues += check_duplicate_against_existing(created_nodes, context_nodes)
+    issues += check_duplicate_against_existing(created_nodes, context_nodes, fetch_module)
 
     def is_building(w):
         return w.get("tags", {}).get("building") and isinstance(w.get("_geom"), Polygon)
