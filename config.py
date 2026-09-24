@@ -53,7 +53,27 @@ REVERT_SIGNATURES = ("reverter_plugin", "revert")
 # --- Geometry check tolerances ------------------------------------------------
 DUPLICATE_NODE_TOLERANCE_M = float(os.getenv("QC_DUP_NODE_TOLERANCE_M", 0.05))
 BUILDING_OVERLAP_MIN_RATIO = float(os.getenv("QC_BUILDING_OVERLAP_MIN_RATIO", 0.02))
+# Below this, treat the endpoint as effectively coincident and don't flag
+# it at all (avoids noise from coordinate-precision-level "gaps"); above
+# this but under the threshold, it's a genuine undershoot/overshoot worth
+# a mapper's attention.
+ENDPOINT_NEAR_WAY_MIN_M = float(os.getenv("QC_ENDPOINT_NEAR_WAY_MIN_M", 0.02))
 ENDPOINT_NEAR_WAY_THRESHOLD_M = float(os.getenv("QC_ENDPOINT_NEAR_WAY_M", 0.5))
+
+# Dense node-cluster anomaly: flags an unusually large number of brand-new
+# nodes packed into a tiny area in one changeset (e.g. hundreds of nodes
+# forming a fake building outline dumped on top of real data).
+DENSE_CLUSTER_RADIUS_M = float(os.getenv("QC_DENSE_CLUSTER_RADIUS_M", 1.0))
+DENSE_CLUSTER_MIN_NODES = int(os.getenv("QC_DENSE_CLUSTER_MIN_NODES", 15))
+
+# A short highway segment sandwiched between two same-class neighbours at
+# simple (non-intersection) junctions -- above this length, a class change
+# is treated as a normal, deliberate reclassification, not an anomaly.
+SUDDEN_CLASS_CHANGE_MAX_LENGTH_M = float(os.getenv("QC_SUDDEN_CLASS_CHANGE_MAX_M", 50))
+
+# Two same-name/ref highway segments whose endpoints are within this
+# distance but don't share a node -- looks continuous, isn't.
+BROKEN_CONTINUITY_MAX_GAP_M = float(os.getenv("QC_BROKEN_CONTINUITY_MAX_GAP_M", 5.0))
 
 # --- Storage -------------------------------------------------------------
 DATA_DIR = os.getenv("QC_DATA_DIR", "data")
