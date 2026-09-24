@@ -60,3 +60,15 @@ def centroid_of(geom):
     """Returns (lat, lon) for any shapely geometry's centroid."""
     c = geom.centroid
     return c.y, c.x
+
+
+def line_length_m(line):
+    """Real-world length of a LineString in metres (its own .length is in
+    degrees, since it's built directly from lon/lat, not a projected CRS)."""
+    coords = list(line.coords)
+    total = 0.0
+    for i in range(len(coords) - 1):
+        lon1, lat1 = coords[i]
+        lon2, lat2 = coords[i + 1]
+        total += haversine_m(lat1, lon1, lat2, lon2)
+    return total
