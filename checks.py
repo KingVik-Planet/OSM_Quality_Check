@@ -121,7 +121,7 @@ def check_untagged_and_missing_primary(elements):
             continue
         if not _has_primary_tag(tags):
             issues.append(Issue("feature mapped without primary tag", el["type"], el["id"], lat, lon,
-                                 detail=f"tags present but none are a primary key: {list(tags.keys())}"))
+                                 detail=f"{el['type']} {el['id']}: tags present but none are a primary key: {list(tags.keys())}"))
     return issues
 
 
@@ -176,7 +176,13 @@ def _element_point(el):
 # ---------------------------------------------------------------------------
 
 def check_duplicate_nodes(created_nodes):
-    """Grid-bucketed so this stays fast even for large (mass-upload) changesets."""
+    """
+    Grid-bucketed so this stays fast even for large (mass-upload)
+    changesets. Only compares new nodes against OTHER new nodes in the
+    SAME changeset -- see check_duplicate_against_existing() for the
+    (more common in practice) case of a new node duplicating something
+    that already existed on the map before this edit.
+    """
     issues = []
     tol = config.DUPLICATE_NODE_TOLERANCE_M
     cell = max(tol, 0.01) / 111000
@@ -203,6 +209,82 @@ def check_duplicate_nodes(created_nodes):
                     seen_pairs.add(pair)
                     issues.append(Issue("duplicated node", "node", a["id"], a["lat"], a["lon"],
                                          detail=f"within {d:.2f}m of node {b['id']}"))
+    return issues
+
+
+def check_duplicate_against_existing(created_nodes, context_nodes):
+    """
+    Flags a newly created node that sits within DUPLICATE_NODE_TOLERANCE_M
+    of a PRE-EXISTING node (a vertex of a nearby building/highway, pulled
+    from Overpass context) -- catches the far more common real-world
+    mistake of accidentally placing a new node on top of something
+    already on the map, instead of reusing/snapping to it. This needs
+    Overpass context, so it only runs as part of the overpass-dependent
+    checks, not the always-fast checks above.
+    """
+    issues = []
+    tol = config.DUPLICATE_NODE_TOLERANCE_M
+    cell = max(tol, 0.01) / 111000
+    buckets = {}
+    for nid, (lon, lat) in context_nodes.items():
+        key = (round(lat / cell), round(lon / cell))
+        buckets.setdefault(key, []).append((nid, lat, lon))
+
+    for n in created_nodes:
+        kx, ky = round(n["lat"] / cell), round(n["lon"] / cell)
+        found = None
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for other_id, other_lat, other_lon in buckets.get((kx + dx, ky + dy), []):
+                    d = geo_utils.haversine_m(n["lat"], n["lon"], other_lat, other_lon)
+                    if d <= tol:
+                        found = (other_id, d)
+                        break
+                if found:
+                    break
+            if found:
+                break
+        if found:
+            other_id, d = found
+            issues.append(Issue("duplicated node", "node", n["id"], n["lat"], n["lon"],
+                                 detail=f"within {d:.2f}m of pre-existing node {other_id}"))
+    return issues
+
+
+def check_dense_node_cluster(created_nodes):
+    """
+    Flags a suspiciously dense cluster of newly created nodes -- e.g. a
+    mapper (or a bad import/script) dumping hundreds of nodes packed
+    into a tiny area, such as forming a fake building outline. Distinct
+    from check_duplicate_nodes: these nodes aren't necessarily on top of
+    each other, just unnaturally densely packed as a group.
+    """
+    issues = []
+    radius = config.DENSE_CLUSTER_RADIUS_M
+    min_size = config.DENSE_CLUSTER_MIN_NODES
+    cell = radius / 111000
+    buckets = {}
+    for n in created_nodes:
+        key = (round(n["lat"] / cell), round(n["lon"] / cell))
+        buckets.setdefault(key, []).append(n)
+
+    flagged_cells = set()
+    for (kx, ky) in list(buckets.keys()):
+        if (kx, ky) in flagged_cells:
+            continue
+        neighbours = []
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                neighbours.extend(buckets.get((kx + dx, ky + dy), []))
+        if len(neighbours) >= min_size:
+            flagged_cells.add((kx, ky))
+            lat = sum(n["lat"] for n in neighbours) / len(neighbours)
+            lon = sum(n["lon"] for n in neighbours) / len(neighbours)
+            issues.append(Issue(
+                "dense node cluster", "node", neighbours[0]["id"], lat, lon,
+                detail=f"{len(neighbours)} new nodes packed within ~{radius}m of each other "
+                       f"-- possible accidental or junk mass node creation",
+            ))
     return issues
 
 
@@ -336,25 +418,40 @@ def check_way_crossings(new_lines, context_lines, issue_name):
 
 
 def check_overlapping_highways(new_highways, context_highways):
-    """Two highway ways running along (nearly) the same alignment, not just crossing."""
+    """
+    Two highway ways running along (nearly) the same alignment, not just
+    crossing. Only compares ways with the SAME highway=* value (e.g. two
+    "residential" ways, or two "primary" ways) -- comparing across
+    different classes was a major source of false positives, since a
+    legitimate service road, cycleway, or footway running alongside a
+    primary road looks geometrically "overlapping" but is a completely
+    different, correctly-tagged feature, not a duplicate.
+    Reports the location as the actual overlapping segment, not the
+    whole way's centroid, so it can actually be found on the map.
+    """
     issues = []
     for w in new_highways:
         geom = w.get("_geom")
-        if geom is None or geom.length == 0:
+        w_class = w.get("tags", {}).get("highway")
+        if geom is None or geom.length == 0 or not w_class:
             continue
         buffered = geom.buffer(0.00003)  # ~3m, in degrees (rough at low latitudes)
         for other in context_highways + new_highways:
             if other["id"] == w["id"]:
                 continue
+            if other.get("tags", {}).get("highway") != w_class:
+                continue  # different road class -- not a duplicate, skip
             other_geom = other.get("_geom")
             if other_geom is None or other_geom.length == 0:
                 continue
-            overlap_len = other_geom.intersection(buffered).length
+            overlap_geom = other_geom.intersection(buffered)
+            overlap_len = overlap_geom.length
             ratio = overlap_len / other_geom.length
             if ratio > 0.6:
-                lat, lon = geo_utils.centroid_of(geom)
+                lat, lon = geo_utils.centroid_of(overlap_geom if not overlap_geom.is_empty else geom)
                 issues.append(Issue("overlapping highway", "way", w["id"], lat, lon,
-                                     detail=f"runs alongside existing way {other['id']} for {ratio:.0%} of its length"))
+                                     detail=f"runs alongside existing way {other['id']} (both '{w_class}') "
+                                            f"for {ratio:.0%} of its length"))
                 break
     return issues
 
@@ -410,10 +507,145 @@ def check_endpoint_near_other_way(new_ways, context_ways):
                     continue
                 nearest_pt = other_geom.interpolate(other_geom.project(pt))
                 dist_m = geo_utils.haversine_m(pt.y, pt.x, nearest_pt.y, nearest_pt.x)
-                if dist_m <= config.ENDPOINT_NEAR_WAY_THRESHOLD_M:
+                if config.ENDPOINT_NEAR_WAY_MIN_M <= dist_m <= config.ENDPOINT_NEAR_WAY_THRESHOLD_M:
                     issues.append(Issue("way end node near other way", "node", node_id, pt.y, pt.x,
                                          detail=f"{dist_m:.2f}m from way {other['id']} but not connected to it"))
                     break
+    return issues
+
+
+def check_sudden_highway_classification_change(new_highways, context_highways):
+    """
+    Flags a short highway segment whose classification differs from both
+    of its immediate neighbours at SIMPLE (non-intersection) junctions,
+    where those two neighbours share the SAME classification -- e.g. a
+    short 'residential' segment spliced into an otherwise continuous
+    'primary' road. Only fires when exactly one other way meets at each
+    end (a plain pass-through), never at a genuine intersection with
+    several roads meeting, since a class change at a real junction is
+    completely normal and expected.
+    """
+    all_highways = new_highways + context_highways
+    node_to_ways = {}
+    for w in all_highways:
+        nodes = w.get("nodes")
+        if not nodes:
+            continue
+        for nid in {nodes[0], nodes[-1]}:
+            node_to_ways.setdefault(nid, []).append(w)
+
+    issues = []
+    for b in new_highways:
+        geom = b.get("_geom")
+        b_class = b.get("tags", {}).get("highway")
+        nodes = b.get("nodes")
+        if geom is None or not b_class or not nodes or len(nodes) < 2:
+            continue
+        if geo_utils.line_length_m(geom) > config.SUDDEN_CLASS_CHANGE_MAX_LENGTH_M:
+            continue
+
+        start_neighbors = [w for w in node_to_ways.get(nodes[0], []) if w["id"] != b["id"]]
+        end_neighbors = [w for w in node_to_ways.get(nodes[-1], []) if w["id"] != b["id"]]
+        if len(start_neighbors) != 1 or len(end_neighbors) != 1:
+            continue  # not a simple pass-through at both ends
+
+        a_class = start_neighbors[0].get("tags", {}).get("highway")
+        c_class = end_neighbors[0].get("tags", {}).get("highway")
+        if a_class and a_class == c_class and a_class != b_class:
+            lat, lon = geo_utils.centroid_of(geom)
+            issues.append(Issue(
+                "sudden highway classification change", "way", b["id"], lat, lon,
+                detail=f"short '{b_class}' segment (~{geo_utils.line_length_m(geom):.0f}m) sandwiched "
+                       f"between '{a_class}' ways {start_neighbors[0]['id']} and {end_neighbors[0]['id']}",
+            ))
+    return issues
+
+
+def check_broken_highway_continuity(new_highways, context_highways):
+    """
+    Flags two highway segments sharing the same name or ref (so they are
+    almost certainly meant to be the same continuous road) whose
+    endpoints sit close together but don't actually share a node -- the
+    road LOOKS continuous on screen but has a genuine topological break.
+    """
+    issues = []
+    all_highways = new_highways + context_highways
+
+    def road_key(w):
+        tags = w.get("tags", {})
+        return tags.get("name") or tags.get("ref")
+
+    groups = {}
+    for w in all_highways:
+        key = road_key(w)
+        if key and w.get("_geom") is not None and w.get("nodes"):
+            groups.setdefault(key, []).append(w)
+
+    seen_pairs = set()
+    for key, ways in groups.items():
+        if len(ways) < 2:
+            continue
+        for i, w1 in enumerate(ways):
+            geom1 = w1["_geom"]
+            endpoints1 = [(geom1.coords[0], w1["nodes"][0]), (geom1.coords[-1], w1["nodes"][-1])]
+            for w2 in ways[i + 1:]:
+                if set(w1["nodes"]) & set(w2["nodes"]):
+                    continue  # already properly connected
+                geom2 = w2["_geom"]
+                endpoints2 = [(geom2.coords[0], w2["nodes"][0]), (geom2.coords[-1], w2["nodes"][-1])]
+                for coord1, _ in endpoints1:
+                    for coord2, _ in endpoints2:
+                        d = geo_utils.haversine_m(coord1[1], coord1[0], coord2[1], coord2[0])
+                        if d <= config.BROKEN_CONTINUITY_MAX_GAP_M:
+                            pair = tuple(sorted((w1["id"], w2["id"])))
+                            if pair in seen_pairs:
+                                continue
+                            seen_pairs.add(pair)
+                            issues.append(Issue(
+                                "broken highway continuity", "way", w1["id"], coord1[1], coord1[0],
+                                detail=f"'{key}' looks continuous but way {w1['id']} and way {w2['id']} "
+                                       f"are {d:.2f}m apart with no shared node",
+                            ))
+    return issues
+
+
+def check_floating_highway(new_highways, context_highways):
+    """
+    Flags a highway way where NEITHER endpoint connects to any other
+    highway -- isolated from the road network on both ends, and not
+    tagged as a legitimate dead end.
+
+    Known limitation: Overpass context only covers a small buffer around
+    this changeset's own bounding box. A genuinely-connected road whose
+    neighbour happens to sit just outside that buffer could be
+    misreported as floating -- worth keeping in mind for ways near the
+    edge of a changeset's area until this is refined further.
+    """
+    all_highways = new_highways + context_highways
+    node_to_ways = {}
+    for w in all_highways:
+        for nid in (w.get("nodes") or []):
+            node_to_ways.setdefault(nid, set()).add(w["id"])
+
+    issues = []
+    for w in new_highways:
+        nodes = w.get("nodes")
+        geom = w.get("_geom")
+        if not nodes or len(nodes) < 2 or geom is None:
+            continue
+        start_connections = node_to_ways.get(nodes[0], set()) - {w["id"]}
+        end_connections = node_to_ways.get(nodes[-1], set()) - {w["id"]}
+        if start_connections or end_connections:
+            continue  # connected at at least one end
+
+        if w.get("tags", {}).get("noexit") == "yes":
+            continue  # explicitly marked as a legitimate dead end
+
+        lat, lon = geo_utils.centroid_of(geom)
+        issues.append(Issue(
+            "floating highway", "way", w["id"], lat, lon,
+            detail="neither endpoint connects to any other highway -- isolated from the road network",
+        ))
     return issues
 
 
@@ -460,6 +692,10 @@ def run_overpass_dependent_checks(cs_meta, new_ways, diff, fetch_module):
     for w in context_ways:
         w["_geom"] = geo_utils.build_way_geometry(w["nodes"], context_nodes, w.get("tags"))
 
+    issues = []
+    created_nodes = [e for e in diff["create"] if e["type"] == "node" and e.get("lat") is not None]
+    issues += check_duplicate_against_existing(created_nodes, context_nodes)
+
     def is_building(w):
         return w.get("tags", {}).get("building") and isinstance(w.get("_geom"), Polygon)
 
@@ -469,7 +705,6 @@ def run_overpass_dependent_checks(cs_meta, new_ways, diff, fetch_module):
     def is_plain_way(w):
         return isinstance(w.get("_geom"), LineString) and not is_highway(w)
 
-    issues = []
     new_buildings = [w for w in new_ways if is_building(w)]
     context_buildings = [w for w in context_ways if is_building(w)]
     issues += check_building_geometry(new_buildings, context_buildings, fetch_module)
@@ -481,6 +716,9 @@ def run_overpass_dependent_checks(cs_meta, new_ways, diff, fetch_module):
                                    [w for w in context_ways if is_plain_way(w)],
                                    "crossing way")
     issues += check_overlapping_highways(new_highways, context_highways)
+    issues += check_sudden_highway_classification_change(new_highways, context_highways)
+    issues += check_broken_highway_continuity(new_highways, context_highways)
+    issues += check_floating_highway(new_highways, context_highways)
     issues += check_node_connects_highway_and_building(
         new_buildings + context_buildings, new_highways + context_highways,
     )
@@ -511,6 +749,7 @@ def run_all_checks(cs_meta, diff, fetch_module):
 
     created_nodes = [e for e in diff["create"] if e["type"] == "node" and e.get("lat") is not None]
     issues += check_duplicate_nodes(created_nodes)
+    issues += check_dense_node_cluster(created_nodes)
 
     new_ways = [e for e in changed_elements if e["type"] == "way"]
     issues += check_duplicate_ways(new_ways)
