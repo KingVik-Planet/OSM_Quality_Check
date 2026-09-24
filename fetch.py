@@ -255,11 +255,44 @@ def fetch_overpass_context(min_lat, min_lon, max_lat, max_lon, exclude_way_ids, 
     _overpass_consecutive_failures = 0  # a mirror answered -- reset the breaker
     nodes, ways = {}, []
     for el in data.get("elements", []):
-        if el["type"] == "node":
+        if el["type"] == "node" and el["id"] not in exclude_node_ids:
             nodes[el["id"]] = (el["lon"], el["lat"])
         elif el["type"] == "way" and el["id"] not in exclude_way_ids:
             ways.append({"id": el["id"], "nodes": el.get("nodes", []), "tags": el.get("tags", {})})
     return ways, nodes
+
+
+def fetch_live_node(node_id):
+    """
+    Re-fetches a single node's CURRENT state directly from the live OSM
+    API -- not Overpass, which can lag behind the live database by
+    minutes, sometimes longer during a rough patch.
+
+    Used as a double-check before flagging a "duplicated node" finding
+    where the "other" node came from Overpass context (an existing
+    node, not something in this changeset). Without this, a node that
+    Overpass still has cached -- but that has since been deleted, moved,
+    or merged into another node by a later edit -- would still get
+    reported as a currently-existing duplicate, even though it can no
+    longer be found by that ID when someone goes to check it in JOSM.
+
+    Returns (lon, lat) if the node currently exists and is visible, or
+    None if it doesn't (deleted, redacted, or a network error) --
+    callers should treat None as "couldn't confirm this still exists",
+    not as proof the duplicate is real.
+    """
+    try:
+        resp = _get(f"{config.OSM_API_BASE}/node/{node_id}.json")
+        el = resp.json().get("elements", [{}])[0]
+        if el.get("type") != "node" or el.get("visible") is False:
+            return None
+        lon, lat = el.get("lon"), el.get("lat")
+        if lon is None or lat is None:
+            return None
+        return (lon, lat)
+    except Exception as e:
+        log.info("Live re-check of node %s failed (treated as unconfirmed): %s", node_id, e)
+        return None
 
 
 def fetch_live_way_geometry(way_id):
