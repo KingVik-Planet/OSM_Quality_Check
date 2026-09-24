@@ -49,16 +49,17 @@ def check_mass_edit_and_revert(cs_meta, diff):
         for sig in config.REVERT_SIGNATURES
     )
     lat, lon = _changeset_centroid(cs_meta)
+    cs_id = cs_meta["id"]
 
     if n_delete >= config.MASS_DELETE_THRESHOLD and not looks_like_revert:
-        issues.append(Issue("mass delete without revert tag", "changeset", cs_meta["id"], lat, lon,
-                             detail=f"{n_delete} objects deleted, no revert signature found"))
+        issues.append(Issue("mass delete without revert tag", "changeset", cs_id, lat, lon,
+                             detail=f"changeset {cs_id}: {n_delete} objects deleted, no revert signature found"))
     if n_create >= config.MASS_CREATE_THRESHOLD:
-        issues.append(Issue("mass upload (create)", "changeset", cs_meta["id"], lat, lon,
-                             detail=f"{n_create} objects created"))
+        issues.append(Issue("mass upload (create)", "changeset", cs_id, lat, lon,
+                             detail=f"changeset {cs_id}: {n_create} objects created"))
     if n_modify >= config.MASS_MODIFY_THRESHOLD:
-        issues.append(Issue("mass upload (modify)", "changeset", cs_meta["id"], lat, lon,
-                             detail=f"{n_modify} objects modified"))
+        issues.append(Issue("mass upload (modify)", "changeset", cs_id, lat, lon,
+                             detail=f"changeset {cs_id}: {n_modify} objects modified"))
     return issues
 
 
@@ -66,18 +67,19 @@ def check_comment_quality(cs_meta):
     tags = cs_meta.get("tags", {})
     comment = tags.get("comment", "").strip()
     lat, lon = _changeset_centroid(cs_meta)
+    cs_id = cs_meta["id"]
     generic = {"mapping", "edit", "test", "update", "changes", "fix", "map", "editing"}
 
     if not comment:
-        detail = "changeset comment is empty"
+        detail = f"changeset {cs_id}: comment is empty"
     elif len(comment) < 10:
-        detail = f"comment too short to be informative: '{comment}'"
+        detail = f"changeset {cs_id}: comment too short to be informative: '{comment}'"
     elif comment.strip().lower() in generic:
-        detail = f"generic, uninformative comment: '{comment}'"
+        detail = f"changeset {cs_id}: generic, uninformative comment: '{comment}'"
     else:
         return []
 
-    return [Issue("unclear changeset comment", "changeset", cs_meta["id"], lat, lon, detail=detail)]
+    return [Issue("unclear changeset comment", "changeset", cs_id, lat, lon, detail=detail)]
 
 
 def _changeset_centroid(cs_meta):
