@@ -479,6 +479,14 @@ def check_overlapping_highways(new_highways, context_highways):
 
 
 def check_node_connects_highway_and_building(building_ways, highway_ways):
+    """
+    A shared node between a highway and a building is usually a mistake
+    -- except when the highway segment there is tagged covered=yes,
+    which is OSM's standard way of saying the road intentionally passes
+    under or through a structure (a covered passage, an archway, a road
+    running beneath part of a building). That case is correct as-is and
+    must not be flagged.
+    """
     issues = []
     building_nodes = {}
     for b in building_ways:
@@ -487,6 +495,8 @@ def check_node_connects_highway_and_building(building_ways, highway_ways):
 
     flagged = set()
     for h in highway_ways:
+        if h.get("tags", {}).get("covered") == "yes":
+            continue  # intentional: road passes under/through a structure
         for n in h["nodes"]:
             if n in building_nodes and n not in flagged:
                 flagged.add(n)
@@ -666,7 +676,7 @@ def check_floating_highway(new_highways, context_highways):
         lat, lon = geo_utils.centroid_of(geom)
         issues.append(Issue(
             "floating highway", "way", w["id"], lat, lon,
-            detail="neither endpoint connects to any other highway -- isolated from the road network",
+            detail=f"way {w['id']}: neither endpoint connects to any other highway -- isolated from the road network",
         ))
     return issues
 
