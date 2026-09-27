@@ -1,8 +1,8 @@
 name: OSM #tt_event hourly quality check
 
 on:
-  # schedule: ---# to be removed on schedule & - cron (Line 4 & 5)
-    # - cron: "7 * * * *"   # 7 minutes past every hour, UTC -- avoids GitHub's
+  schedule:
+    - cron: "7 * * * *"   # 7 minutes past every hour, UTC -- avoids GitHub's
                             # scheduler congestion at the top of the hour
   workflow_dispatch: {}
 
@@ -37,6 +37,13 @@ jobs:
         run: python main.py
 
       - name: Commit updated data back to the repo
+        # Runs even if the step above failed -- main.py checkpoints its
+        # progress to disk as it goes (retry-queue results, state) before
+        # attempting riskier later steps, specifically so that a crash
+        # partway through still leaves real, completed work to commit.
+        # Without if: always(), GitHub Actions skips this step entirely
+        # after any failure, which used to throw all of that away.
+        if: always()
         run: |
           git config user.name "osm-quality-bot"
           git config user.email "actions@users.noreply.github.com"
