@@ -157,14 +157,24 @@ def run():
     if pending:
         log.info("Retried %d pending changeset(s); %d still pending", len(pending), len(still_pending))
 
+    # Save retry-queue progress NOW, before attempting to scan new
+    # changesets -- if that next step crashes (e.g. a transient OSM API
+    # hiccup), the real work already completed resolving retry-queue
+    # items this run must not be thrown away along with it.
+    retry_path, n_retry_written = storage.append_issues(state, retry_rows)
+    storage.save_state(state)
+    storage.save_pending_rechecks(still_pending)
+    if n_retry_written:
+        log.info("Wrote %d issue row(s) from the retry queue to %s", n_retry_written, retry_path)
+
     start, end = determine_window(state)
     log.info("Scanning #%s changesets worldwide from %s to %s UTC", config.HASHTAG, start, end)
 
     changesets = fetch.fetch_changesets_in_window(start, end)
     log.info("Found %d candidate changeset(s)", len(changesets))
 
-    all_issues = list(retry_rows)
-    newly_pending = still_pending
+    all_issues = []
+    newly_pending = list(still_pending)
     total = len(changesets)
     for idx, cs in enumerate(changesets, start=1):
         try:
@@ -194,8 +204,21 @@ def run():
     log.info("Wrote %d issue row(s) to %s (%d changeset(s) still pending Overpass recheck)",
               n_written, path, len(newly_pending))
 
-    slack_notify.post_summary(start, end, all_issues, csv_path=path)
+    slack_notify.post_summary(start, end, retry_rows + all_issues, csv_path=path)
 
 
 if __name__ == "__main__":
-    run()
+    try:
+        run()
+    except Exception:
+        # By this point, retry-queue progress has already been checkpointed
+        # to disk (see the save immediately after retry_pending() above),
+        # and if this failure happened before the new window was ever
+        # determined, last_run_end_utc was never advanced -- so the next
+        # run will simply retry the exact same window from scratch.
+        # Nothing is lost either way. Logging and exiting cleanly (rather
+        # than crashing with a non-zero exit code) avoids marking every
+        # brief external hiccup as a failed Action run when the system is
+        # already designed to absorb it gracefully.
+        log.exception("Run did not complete due to an unexpected error -- "
+                       "already-saved progress is safe; the next run will retry what's left")
