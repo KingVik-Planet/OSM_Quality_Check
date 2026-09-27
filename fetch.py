@@ -40,8 +40,20 @@ class OverpassUnavailable(Exception):
 # cost for nothing. This resets automatically every run, since each run
 # is a fresh process -- so a recovered Overpass gets a fair fresh
 # attempt again next time, no persistence needed.
-_OVERPASS_CIRCUIT_THRESHOLD = 2
+_OVERPASS_CIRCUIT_THRESHOLD = 1
 _overpass_consecutive_failures = 0
+
+
+def overpass_circuit_is_open():
+    """
+    True once Overpass has failed enough times in a row this run that
+    the circuit breaker has tripped. Exposed so callers processing a
+    long list of items (like the retry queue) can stop attempting
+    further ones entirely the moment this becomes true, instead of
+    still paying the cost of fetching each item's changeset metadata
+    and diff only to have the Overpass step skip instantly anyway.
+    """
+    return _overpass_consecutive_failures >= _OVERPASS_CIRCUIT_THRESHOLD
 
 
 def _get(url, params=None, headers=None, timeout=60):
