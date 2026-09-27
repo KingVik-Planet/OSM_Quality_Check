@@ -23,11 +23,17 @@ OVERPASS_ENDPOINTS = [
 # how far (metres) around a changeset's bbox to pull existing context geometry
 OVERPASS_CONTEXT_BUFFER_M = float(os.getenv("QC_OVERPASS_BUFFER_M", 50))
 # how long (seconds) to wait for a single HTTP response from a mirror
-OVERPASS_HTTP_TIMEOUT_S = int(os.getenv("QC_OVERPASS_HTTP_TIMEOUT_S", 120))
+OVERPASS_HTTP_TIMEOUT_S = int(os.getenv("QC_OVERPASS_HTTP_TIMEOUT_S", 45))
 # told to the Overpass server itself as its own internal execution budget
-OVERPASS_QUERY_TIMEOUT_S = int(os.getenv("QC_OVERPASS_QUERY_TIMEOUT_S", 100))
+OVERPASS_QUERY_TIMEOUT_S = int(os.getenv("QC_OVERPASS_QUERY_TIMEOUT_S", 35))
 # how many times to retry a single mirror before moving to the next one
 OVERPASS_RETRIES = int(os.getenv("QC_OVERPASS_RETRIES", 1))
+
+# Maximum retry-queue items processed in a single run. Bounds worst-case
+# run time even when Overpass is fully healthy but the backlog has grown
+# large -- ensures the current hour's new changesets always get scanned
+# instead of being starved by an ever-growing retry queue.
+MAX_RETRY_PER_RUN = int(os.getenv("QC_MAX_RETRY_PER_RUN", 300))
 
 # --- osmcha (optional enrichment only -- never a hard dependency) -----------
 OSMCHA_API_BASE = os.getenv("OSMCHA_API_BASE", "https://osmcha.org/api/v1")
@@ -142,8 +148,6 @@ ENUMERATED_KEY_VALUES = {
     },
 }
 
-# Keys that count as "this feature has a real primary tag" for the
-# missing-primary-tag check.
 # Keys that count as "this feature has a real primary tag" for the
 # missing-primary-tag check. Sourced from OSM's own "Top-level tag" wiki
 # page (https://wiki.openstreetmap.org/wiki/Top-level_tag), which
