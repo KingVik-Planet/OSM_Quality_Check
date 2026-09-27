@@ -62,19 +62,38 @@ def determine_window(state):
 
 def retry_pending(pending_list):
     """
-    Retries just the Overpass-dependent checks for every changeset
-    sitting in the queue, using an ID-only re-fetch of that changeset's
-    metadata and diff. Returns (rows, still_pending) -- entries that
-    succeed are dropped from the queue; entries that fail again (still
-    Overpass-unavailable) stay queued indefinitely; entries whose
-    changeset metadata itself can't be fetched are dropped after
-    MAX_META_FETCH_FAILURES attempts, since that's a "this changeset is
-    gone" problem, not an "Overpass is down" problem.
+    Retries just the Overpass-dependent checks for changesets sitting in
+    the queue, using an ID-only re-fetch of that changeset's metadata
+    and diff. Returns (rows, still_pending).
+
+    Two safeguards keep this bounded no matter how large the backlog
+    grows:
+
+    1. Only the first config.MAX_RETRY_PER_RUN items are attempted this
+       run -- the rest are left untouched and simply stay queued for a
+       later run. Without this, a backlog of thousands of items could
+       make a single run take hours even when Overpass is perfectly
+       healthy, starving the new hourly window of a chance to run.
+
+    2. The moment the Overpass circuit breaker trips (see fetch.py),
+       processing stops immediately for the rest of THIS batch. Every
+       remaining item would just fail the same way and get re-queued
+       anyway, so there's no point paying for their metadata/diff
+       fetches once we already know Overpass is down for this run.
     """
     rows = []
     still_pending = []
 
-    for entry in pending_list:
+    to_process = pending_list[:config.MAX_RETRY_PER_RUN]
+    remainder = pending_list[config.MAX_RETRY_PER_RUN:]
+
+    stopped_early_at = None
+    for i, entry in enumerate(to_process):
+        if fetch.overpass_circuit_is_open():
+            stopped_early_at = i
+            still_pending.extend(to_process[i:])
+            break
+
         cs_id = entry["changeset_id"]
         cs_meta = fetch.fetch_changeset_meta(cs_id)
         if cs_meta is None:
@@ -109,6 +128,17 @@ def retry_pending(pending_list):
             )
             rows.extend(checks.to_row(cs_meta, issue) for issue in overpass_issues)
 
+    if stopped_early_at is not None:
+        log.warning(
+            "Overpass circuit breaker tripped while processing the retry queue -- "
+            "stopped after %d item(s), %d left untouched this run (still queued)",
+            stopped_early_at, len(to_process) - stopped_early_at,
+        )
+    if remainder:
+        log.info("Retry queue larger than the per-run cap (%d) -- %d item(s) deferred to a later run",
+                  config.MAX_RETRY_PER_RUN, len(remainder))
+
+    still_pending.extend(remainder)
     return rows, still_pending
 
 
