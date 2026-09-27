@@ -1,19 +1,7 @@
 [
   {
-    "changeset_id": 189468864,
-    "overpass_attempts": 75,
-    "meta_fetch_failures": 0,
-    "first_flagged_utc": "2026-09-24T04:38:49.358673+00:00"
-  },
-  {
-    "changeset_id": 189468777,
-    "overpass_attempts": 74,
-    "meta_fetch_failures": 0,
-    "first_flagged_utc": "2026-09-24T04:38:52.746898+00:00"
-  },
-  {
     "changeset_id": 189468698,
-    "overpass_attempts": 74,
+    "overpass_attempts": 75,
     "meta_fetch_failures": 0,
     "first_flagged_utc": "2026-09-24T04:38:53.724089+00:00"
   },
@@ -21940,5 +21928,59 @@
     "overpass_attempts": 1,
     "meta_fetch_failures": 0,
     "first_flagged_utc": "2026-09-27T21:25:34.554291+00:00"
+  },
+  {
+    "changeset_id": 189609191,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-09-27T21:27:43.330280+00:00"
+  },
+  {
+    "changeset_id": 189608943,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-09-27T21:27:43.479559+00:00"
+  },
+  {
+    "changeset_id": 189608815,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-09-27T21:27:43.629188+00:00"
+  },
+  {
+    "changeset_id": 189608805,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-09-27T21:27:43.779449+00:00"
+  },
+  {
+    "changeset_id": 189608712,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-09-27T21:27:44.457216+00:00"
+  },
+  {
+    "changeset_id": 189608402,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-09-27T21:27:45.314933+00:00"
+  },
+  {
+    "changeset_id": 189608391,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-09-27T21:27:45.830629+00:00"
+  },
+  {
+    "changeset_id": 189608371,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-09-27T21:27:46.179052+00:00"
+  },
+  {
+    "changeset_id": 189608102,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-09-27T21:27:46.331286+00:00"
   }
 ]
