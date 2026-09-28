@@ -1,7 +1,7 @@
 [
   {
     "changeset_id": 189485338,
-    "overpass_attempts": 63,
+    "overpass_attempts": 64,
     "meta_fetch_failures": 0,
     "first_flagged_utc": "2026-09-24T15:49:10.827415+00:00"
   },
@@ -32992,5 +32992,77 @@
     "overpass_attempts": 1,
     "meta_fetch_failures": 0,
     "first_flagged_utc": "2026-09-28T12:46:26.773076+00:00"
+  },
+  {
+    "changeset_id": 189678182,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-09-28T12:51:13.937223+00:00"
+  },
+  {
+    "changeset_id": 189678166,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-09-28T12:51:14.946790+00:00"
+  },
+  {
+    "changeset_id": 189678162,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-09-28T12:51:16.066899+00:00"
+  },
+  {
+    "changeset_id": 189678153,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-09-28T12:51:17.601289+00:00"
+  },
+  {
+    "changeset_id": 189678150,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-09-28T12:51:18.105562+00:00"
+  },
+  {
+    "changeset_id": 189678140,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-09-28T12:51:18.615871+00:00"
+  },
+  {
+    "changeset_id": 189678125,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-09-28T12:51:19.669439+00:00"
+  },
+  {
+    "changeset_id": 189678121,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-09-28T12:51:20.396805+00:00"
+  },
+  {
+    "changeset_id": 189678101,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-09-28T12:51:21.347918+00:00"
+  },
+  {
+    "changeset_id": 189678096,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-09-28T12:51:21.852279+00:00"
+  },
+  {
+    "changeset_id": 189678048,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-09-28T12:51:22.884284+00:00"
+  },
+  {
+    "changeset_id": 189678006,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-09-28T12:51:24.106925+00:00"
   }
 ]
