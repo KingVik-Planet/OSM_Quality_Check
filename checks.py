@@ -478,7 +478,7 @@ def check_overlapping_highways(new_highways, context_highways):
     return issues
 
 
-def check_node_connects_highway_and_building(building_ways, highway_ways):
+def check_node_connects_highway_and_building(new_buildings, context_buildings, new_highways, context_highways):
     """
     A shared node between a highway and a building is usually a mistake
     -- except when the highway segment there is tagged covered=yes,
@@ -486,26 +486,40 @@ def check_node_connects_highway_and_building(building_ways, highway_ways):
     under or through a structure (a covered passage, an archway, a road
     running beneath part of a building). That case is correct as-is and
     must not be flagged.
+
+    IMPORTANT: context (pre-existing, nearby) buildings and highways are
+    included so a new edit can be checked against what's already there --
+    but a finding must always involve at least one NEW element (created
+    or modified by THIS changeset). Without that requirement, two purely
+    pre-existing objects that happen to share a node -- something this
+    changeset never touched at all -- would get flagged and wrongly
+    attributed to whoever's edit merely happened to fall nearby.
     """
+    new_building_ids = {b["id"] for b in new_buildings}
+    new_highway_ids = {h["id"] for h in new_highways}
+
     issues = []
     building_nodes = {}
-    for b in building_ways:
+    for b in new_buildings + context_buildings:
         for n in b["nodes"]:
             building_nodes.setdefault(n, []).append(b["id"])
 
     flagged = set()
-    for h in highway_ways:
+    for h in new_highways + context_highways:
         if h.get("tags", {}).get("covered") == "yes":
             continue  # intentional: road passes under/through a structure
         for n in h["nodes"]:
             if n in building_nodes and n not in flagged:
+                building_id = building_nodes[n][0]
+                if h["id"] not in new_highway_ids and building_id not in new_building_ids:
+                    continue  # neither side was touched by this changeset -- not this user's issue
                 flagged.add(n)
                 geom = h.get("_geom")
                 if geom is None:
                     continue
                 lat, lon = geo_utils.centroid_of(geom)
                 issues.append(Issue("node connected highway and building", "node", n, lat, lon,
-                                     detail=f"shared by highway way {h['id']} and building way {building_nodes[n][0]}"))
+                                     detail=f"shared by highway way {h['id']} and building way {building_id}"))
     return issues
 
 
@@ -599,8 +613,16 @@ def check_broken_highway_continuity(new_highways, context_highways):
     almost certainly meant to be the same continuous road) whose
     endpoints sit close together but don't actually share a node -- the
     road LOOKS continuous on screen but has a genuine topological break.
+
+    IMPORTANT: a flagged pair must always include at least one NEW way
+    (created or modified by THIS changeset). Without that requirement,
+    two purely pre-existing segments sharing a name -- a break this
+    changeset never touched or introduced -- would get flagged and
+    wrongly attributed to whoever's unrelated edit happened to fall
+    nearby.
     """
     issues = []
+    new_highway_ids = {h["id"] for h in new_highways}
     all_highways = new_highways + context_highways
 
     def road_key(w):
@@ -621,6 +643,8 @@ def check_broken_highway_continuity(new_highways, context_highways):
             geom1 = w1["_geom"]
             endpoints1 = [(geom1.coords[0], w1["nodes"][0]), (geom1.coords[-1], w1["nodes"][-1])]
             for w2 in ways[i + 1:]:
+                if w1["id"] not in new_highway_ids and w2["id"] not in new_highway_ids:
+                    continue  # neither side was touched by this changeset -- not this user's issue
                 if set(w1["nodes"]) & set(w2["nodes"]):
                     continue  # already properly connected
                 geom2 = w2["_geom"]
@@ -771,7 +795,7 @@ def run_overpass_dependent_checks(cs_meta, new_ways, diff, fetch_module):
     issues += check_broken_highway_continuity(new_highways, context_highways)
     issues += check_floating_highway(new_highways, context_highways, fetch_module)
     issues += check_node_connects_highway_and_building(
-        new_buildings + context_buildings, new_highways + context_highways,
+        new_buildings, context_buildings, new_highways, context_highways,
     )
     issues += check_endpoint_near_other_way(new_ways, context_ways)
 
