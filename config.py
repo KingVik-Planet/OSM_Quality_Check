@@ -29,11 +29,15 @@ OVERPASS_QUERY_TIMEOUT_S = int(os.getenv("QC_OVERPASS_QUERY_TIMEOUT_S", 35))
 # how many times to retry a single mirror before moving to the next one
 OVERPASS_RETRIES = int(os.getenv("QC_OVERPASS_RETRIES", 1))
 
-# Maximum retry-queue items processed in a single run. Bounds worst-case
-# run time even when Overpass is fully healthy but the backlog has grown
-# large -- ensures the current hour's new changesets always get scanned
-# instead of being starved by an ever-growing retry queue.
+# Maximum retry-queue items processed in a single run.
 MAX_RETRY_PER_RUN = int(os.getenv("QC_MAX_RETRY_PER_RUN", 300))
+
+# Same idea, for the changeset-discovery scan-retry queue: caps how many
+# persistently-stuck time-slices get retried in a single run. Each retry
+# costs up to ~70s (the OSM-API retry wrapper's own attempts+backoff), so
+# without a cap, enough stuck slices accumulating at once could slow a
+# run down the same way an uncapped Overpass queue used to.
+MAX_SCAN_RETRY_PER_RUN = int(os.getenv("QC_MAX_SCAN_RETRY_PER_RUN", 20))
 
 # --- osmcha (optional enrichment only -- never a hard dependency) -----------
 OSMCHA_API_BASE = os.getenv("OSMCHA_API_BASE", "https://osmcha.org/api/v1")
@@ -148,6 +152,8 @@ ENUMERATED_KEY_VALUES = {
     },
 }
 
+# Keys that count as "this feature has a real primary tag" for the
+# missing-primary-tag check.
 # Keys that count as "this feature has a real primary tag" for the
 # missing-primary-tag check. Sourced from OSM's own "Top-level tag" wiki
 # page (https://wiki.openstreetmap.org/wiki/Top-level_tag), which
