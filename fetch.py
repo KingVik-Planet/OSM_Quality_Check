@@ -4,6 +4,7 @@ Talks to the OSM API, Overpass, and (optionally) osmcha to find
 down the data needed to run checks on them.
 """
 import logging
+import time
 from datetime import datetime
 
 import requests
@@ -56,13 +57,34 @@ def overpass_circuit_is_open():
     return _overpass_consecutive_failures >= _OVERPASS_CIRCUIT_THRESHOLD
 
 
-def _get(url, params=None, headers=None, timeout=60):
+def _get(url, params=None, headers=None, timeout=60, max_attempts=3):
+    """
+    Light retry wrapper for OSM API calls. The OSM API is normally very
+    reliable, but does occasionally have a brief hiccup (a 503, a slow
+    first byte). Without any retry here, that single brief blip used to
+    crash the entire run -- including throwing away real work already
+    completed earlier in that same run (e.g. a fully-processed retry
+    queue) purely because nothing gets saved until the very end. A
+    couple of quick retries absorb the vast majority of these blips
+    without meaningfully slowing down the normal, successful case.
+    """
     h = dict(HEADERS)
     if headers:
         h.update(headers)
-    resp = requests.get(url, params=params, headers=h, timeout=timeout)
-    resp.raise_for_status()
-    return resp
+    last_exc = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            resp = requests.get(url, params=params, headers=h, timeout=timeout)
+            resp.raise_for_status()
+            return resp
+        except requests.RequestException as e:
+            last_exc = e
+            if attempt < max_attempts:
+                wait = 2 * attempt
+                log.info("OSM API request failed (attempt %d/%d): %s -- retrying in %ds",
+                         attempt, max_attempts, e, wait)
+                time.sleep(wait)
+    raise last_exc
 
 
 def _parse_osm_dt(s):
@@ -71,17 +93,29 @@ def _parse_osm_dt(s):
 
 def fetch_changesets_in_window(start_dt, end_dt):
     """
-    Returns a list of changeset dicts (id, uid, user, created_at,
-    closed_at, min_lat/lon, max_lat/lon, tags{}) for every changeset
-    worldwide that intersects [start_dt, end_dt) UTC and mentions the
-    configured hashtag.
+    Returns (found, unresolved) for every changeset worldwide that
+    intersects [start_dt, end_dt) UTC and mentions the configured
+    hashtag.
 
     The OSM API's /changesets endpoint returns at most 100 results per
     call and has no native hashtag filter, so this pages backwards
     through the window using the `time` parameter and filters
     client-side against the changeset's `comment` and `hashtags` tags.
+
+    IMPORTANT: if a specific page query fails persistently (already
+    retried inside _get(), still failing -- not a brief blip but a
+    genuinely stuck query, which does happen for some narrow historical
+    slices), this does NOT raise and does NOT silently drop that data.
+    Instead it stops paginating further and returns the sub-range that
+    couldn't be scanned as `unresolved`, a list of (start_iso, end_iso)
+    strings. The caller must queue these for a later retry -- e.g. via
+    storage's pending-changeset-scan queue -- rather than treat the
+    window as fully scanned. This is what stops one permanently-stuck
+    query from blocking the entire pipeline's forward progress forever,
+    while still guaranteeing that sub-range gets checked eventually.
     """
     found = {}
+    unresolved = []
     cursor_end = end_dt
     hashtag_needle = f"#{config.HASHTAG}".lower()
 
@@ -90,7 +124,18 @@ def fetch_changesets_in_window(start_dt, end_dt):
             "time": f"{start_dt.isoformat()}Z,{cursor_end.isoformat()}Z",
             "closed": "true",
         }
-        resp = _get(f"{config.OSM_API_BASE}/changesets.json", params=params)
+        try:
+            resp = _get(f"{config.OSM_API_BASE}/changesets.json", params=params)
+        except requests.RequestException as e:
+            log.warning(
+                "Persistent failure scanning changesets from %s to %s -- "
+                "queuing this slice for later retry instead of blocking "
+                "the whole window: %s",
+                start_dt.isoformat(), cursor_end.isoformat(), e,
+            )
+            unresolved.append((start_dt.isoformat(), cursor_end.isoformat()))
+            break
+
         data = resp.json().get("changesets", [])
         if not data:
             break
@@ -110,7 +155,7 @@ def fetch_changesets_in_window(start_dt, end_dt):
             break
         cursor_end = new_cursor_end
 
-    return list(found.values())
+    return list(found.values()), unresolved
 
 
 def fetch_changeset_meta(changeset_id):
@@ -304,6 +349,41 @@ def fetch_live_node(node_id):
         return (lon, lat)
     except Exception as e:
         log.info("Live re-check of node %s failed (treated as unconfirmed): %s", node_id, e)
+        return None
+
+
+def fetch_ways_using_node(node_id):
+    """
+    Asks Overpass directly: "what ways (anywhere on the planet) contain
+    this exact node?" -- using Overpass's own "backward node" query
+    (way(bn:NODE_ID)), which is precise and completely independent of
+    distance or bounding box.
+
+    This exists specifically to fix a false-positive source in the
+    "floating highway" check: that check's normal context comes from a
+    small (~50m) buffer around the changeset's own bounding box, so a
+    road's real neighbour sitting just outside that buffer would make a
+    genuinely-connected road look falsely isolated. This function
+    removes that blind spot entirely for the one or two endpoint nodes
+    that actually need checking, rather than widening the buffer for
+    every check (which would cost far more Overpass load for no benefit
+    elsewhere).
+
+    Returns a set of way IDs (possibly empty) that reference this node,
+    or None if the query itself failed -- callers must treat None as
+    "couldn't confirm either way", not as proof of isolation.
+    """
+    query = f"[out:json][timeout:{config.OVERPASS_QUERY_TIMEOUT_S}];way(bn:{node_id});out ids;"
+    try:
+        resp = requests.post(
+            config.OVERPASS_ENDPOINTS[0], data={"data": query}, headers=HEADERS,
+            timeout=config.OVERPASS_HTTP_TIMEOUT_S,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return {el["id"] for el in data.get("elements", []) if el["type"] == "way"}
+    except Exception as e:
+        log.info("Could not verify node %s's real connections (treated as unconfirmed): %s", node_id, e)
         return None
 
 

@@ -641,17 +641,23 @@ def check_broken_highway_continuity(new_highways, context_highways):
     return issues
 
 
-def check_floating_highway(new_highways, context_highways):
+def check_floating_highway(new_highways, context_highways, fetch_module=None):
     """
-    Flags a highway way where NEITHER endpoint connects to any other
-    highway -- isolated from the road network on both ends, and not
-    tagged as a legitimate dead end.
+    Flags a highway way that is purely isolated: NEITHER endpoint
+    connects to any other highway -- not one end, both ends -- and it's
+    not tagged as a legitimate dead end.
 
-    Known limitation: Overpass context only covers a small buffer around
-    this changeset's own bounding box. A genuinely-connected road whose
-    neighbour happens to sit just outside that buffer could be
-    misreported as floating -- worth keeping in mind for ways near the
-    edge of a changeset's area until this is refined further.
+    The local ~50m Overpass context alone isn't always enough to be
+    sure of that: a genuinely-connected road's real neighbour can sit
+    just outside that small buffer, which would otherwise make it look
+    falsely isolated. So before actually confirming a candidate as
+    floating, if fetch_module is given, each endpoint is double-checked
+    with a precise, distance-independent query ("what ways anywhere use
+    this exact node?") -- if that finds a connection the local buffer
+    missed, or if the check itself couldn't be confirmed either way,
+    the candidate is NOT flagged. This trades a small amount of extra
+    verification for eliminating this specific false-positive source
+    entirely, rather than just noting it as a known limitation.
     """
     all_highways = new_highways + context_highways
     node_to_ways = {}
@@ -668,10 +674,23 @@ def check_floating_highway(new_highways, context_highways):
         start_connections = node_to_ways.get(nodes[0], set()) - {w["id"]}
         end_connections = node_to_ways.get(nodes[-1], set()) - {w["id"]}
         if start_connections or end_connections:
-            continue  # connected at at least one end
+            continue  # connected at at least one end, within local context
 
         if w.get("tags", {}).get("noexit") == "yes":
             continue  # explicitly marked as a legitimate dead end
+
+        if fetch_module is not None:
+            confirmed_isolated = True
+            for endpoint_node in (nodes[0], nodes[-1]):
+                real_ways = fetch_module.fetch_ways_using_node(endpoint_node)
+                if real_ways is None or (real_ways - {w["id"]}):
+                    # Either we couldn't confirm isolation, or the wider,
+                    # precise check found a real connection the small
+                    # local buffer missed -- either way, don't flag it.
+                    confirmed_isolated = False
+                    break
+            if not confirmed_isolated:
+                continue
 
         lat, lon = geo_utils.centroid_of(geom)
         issues.append(Issue(
@@ -750,7 +769,7 @@ def run_overpass_dependent_checks(cs_meta, new_ways, diff, fetch_module):
     issues += check_overlapping_highways(new_highways, context_highways)
     issues += check_sudden_highway_classification_change(new_highways, context_highways)
     issues += check_broken_highway_continuity(new_highways, context_highways)
-    issues += check_floating_highway(new_highways, context_highways)
+    issues += check_floating_highway(new_highways, context_highways, fetch_module)
     issues += check_node_connects_highway_and_building(
         new_buildings + context_buildings, new_highways + context_highways,
     )
