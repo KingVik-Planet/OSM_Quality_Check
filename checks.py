@@ -848,4 +848,5 @@ def to_row(cs_meta, issue: Issue):
         "time_utc": cs_meta.get("closed_at") or cs_meta.get("created_at"),
         "country": country,
         "detail": issue.detail,
+        "hashtag": config.HASHTAG,
     }

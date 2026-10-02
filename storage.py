@@ -16,7 +16,7 @@ import config
 FIELDNAMES = [
     "s_no", "error_type", "username", "user_id", "osm_location_link",
     "changeset_id", "changeset_link", "osm_object_type", "osm_object_id",
-    "time_utc", "country", "detail",
+    "time_utc", "country", "detail", "hashtag",
 ]
 
 PENDING_RECHECK_FILE = os.path.join(config.DATA_DIR, "pending_overpass_recheck.json")
