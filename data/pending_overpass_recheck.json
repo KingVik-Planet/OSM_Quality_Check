@@ -1,7 +1,7 @@
 [
   {
     "changeset_id": 189615537,
-    "overpass_attempts": 11,
+    "overpass_attempts": 12,
     "meta_fetch_failures": 0,
     "first_flagged_utc": "2026-09-27T21:53:07.321432+00:00"
   },
@@ -240910,5 +240910,59 @@
     "overpass_attempts": 1,
     "meta_fetch_failures": 0,
     "first_flagged_utc": "2026-11-23T17:01:30.242481+00:00"
+  },
+  {
+    "changeset_id": 192356857,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-11-23T18:01:31.670588+00:00"
+  },
+  {
+    "changeset_id": 192356788,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-11-23T18:01:32.242623+00:00"
+  },
+  {
+    "changeset_id": 192355514,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-11-23T18:01:32.835458+00:00"
+  },
+  {
+    "changeset_id": 192355332,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-11-23T18:01:34.119202+00:00"
+  },
+  {
+    "changeset_id": 192355201,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-11-23T18:01:35.816841+00:00"
+  },
+  {
+    "changeset_id": 192355146,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-11-23T18:01:36.361105+00:00"
+  },
+  {
+    "changeset_id": 192354318,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-11-23T18:01:36.921724+00:00"
+  },
+  {
+    "changeset_id": 192354132,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-11-23T18:01:37.469861+00:00"
+  },
+  {
+    "changeset_id": 192353996,
+    "overpass_attempts": 1,
+    "meta_fetch_failures": 0,
+    "first_flagged_utc": "2026-11-23T18:01:38.018037+00:00"
   }
 ]
